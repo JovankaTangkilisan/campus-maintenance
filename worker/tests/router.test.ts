@@ -2186,6 +2186,238 @@ describe('POST /api/reports/:reportId/comments - Add comment', () => {
   });
 });
 
+function createDashboardMockDb(options?: {
+  total?: number;
+  active?: number;
+  closed?: number;
+  pendingAssign?: number;
+  perStatus?: Record<string, number>;
+  perPriority?: Record<string, number>;
+  perCategory?: Record<string, number>;
+  avgHours?: number | null;
+}) {
+  const queries: QueryLog[] = [];
+
+  const db = {
+    prepare: (sql: string) => {
+      let boundArgs: any[] = [];
+      const stmt = {
+        bind: (...args: any[]) => {
+          boundArgs = args;
+          return stmt;
+        },
+        run: async () => {
+          queries.push({ sql, args: boundArgs });
+          return { success: true, meta: { last_row_id: 999 } };
+        },
+        first: async () => {
+          queries.push({ sql, args: boundArgs });
+          if (sql.includes('COUNT(*)') && sql.includes('FROM service_requests') && !sql.includes('WHERE')) {
+            return { value: options?.total ?? 5 };
+          }
+          if (sql.includes("status NOT IN ('ditutup', 'ditolak')")) {
+            return { value: options?.active ?? 3 };
+          }
+          if (sql.includes("status = 'ditutup'")) {
+            return { value: options?.closed ?? 2 };
+          }
+          if (sql.includes("status IN ('baru', 'diperiksa')")) {
+            return { value: options?.pendingAssign ?? 1 };
+          }
+          if (sql.includes('AVG')) {
+            return { avg_hours: options && 'avgHours' in options ? options.avgHours : 48.5 };
+          }
+          return null;
+        },
+        all: async () => {
+          queries.push({ sql, args: boundArgs });
+          if (sql.includes('GROUP BY status')) {
+            const statuses = options?.perStatus ?? { baru: 2, diperiksa: 1, ditugaskan: 1, ditutup: 2 };
+            return {
+              success: true,
+              results: Object.entries(statuses).map(([status, count]) => ({ status, count }))
+            };
+          }
+          if (sql.includes('GROUP BY priority')) {
+            const priorities = options?.perPriority ?? { low: 2, medium: 1, high: 1, urgent: 1 };
+            return {
+              success: true,
+              results: Object.entries(priorities).map(([priority, count]) => ({ priority, count }))
+            };
+          }
+          if (sql.includes('GROUP BY category')) {
+            const categories = options?.perCategory ?? { 'AC & Pendingin Ruangan': 2, 'Kelistrikan': 1, 'Lainnya': 2 };
+            return {
+              success: true,
+              results: Object.entries(categories).map(([category, count]) => ({ category, count }))
+            };
+          }
+          return { success: true, results: [] };
+        }
+      };
+      return stmt;
+    }
+  } as unknown as D1Database;
+
+  return { db, queries };
+}
+
+describe('GET /api/dashboard - Dashboard statistics', () => {
+  it('Admin mengakses dashboard harus 200 dan berisi semua statistik', async () => {
+    const { db, queries } = createDashboardMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/dashboard', {
+      method: 'GET',
+      headers: {
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.dashboard.total).toBe(5);
+    expect(body.dashboard.active).toBe(3);
+    expect(body.dashboard.closed).toBe(2);
+    expect(body.dashboard.pending_assign).toBe(1);
+    expect(body.dashboard.avg_resolution_hours).toBe(48.5);
+    expect(body.dashboard.per_status.baru).toBe(2);
+    expect(body.dashboard.per_status.ditutup).toBe(2);
+    expect(body.dashboard.per_priority.low).toBe(2);
+    expect(body.dashboard.per_category['AC & Pendingin Ruangan']).toBe(2);
+
+    // Verifikasi query agregate — filter hanya dari first() (bukan GROUP BY all())
+    const countFirstQueries = queries.filter(q =>
+      q.sql.includes('COUNT(*)') && !q.sql.includes('GROUP BY')
+    );
+    expect(countFirstQueries.length).toBe(4);
+
+    const groupAllQueries = queries.filter(q => q.sql.includes('GROUP BY'));
+    expect(groupAllQueries.length).toBe(3);
+
+    const avgQuery = queries.find(q => q.sql.includes('AVG'));
+    expect(avgQuery).toBeDefined();
+    expect(avgQuery?.sql).toContain('julianday(completed_at)');
+    expect(avgQuery?.sql).toContain('julianday(created_at)');
+  });
+
+  it('Manajer Fasilitas mengakses dashboard harus 200', async () => {
+    const { db } = createDashboardMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/dashboard', {
+      method: 'GET',
+      headers: {
+        'x-actor-id': 'manajer-1',
+        'x-actor-name': 'Facility Manager',
+        'x-actor-role': 'Manajer Fasilitas'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.dashboard.total).toBe(5);
+  });
+
+  it('Pelapor mengakses dashboard harus 403', async () => {
+    const { db } = createDashboardMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/dashboard', {
+      method: 'GET',
+      headers: {
+        'x-actor-id': 'pelapor-1',
+        'x-actor-name': 'Fajar Ramadhan',
+        'x-actor-role': 'Pelapor'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(403);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('FORBIDDEN');
+  });
+
+  it('Teknisi mengakses dashboard harus 403', async () => {
+    const { db } = createDashboardMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/dashboard', {
+      method: 'GET',
+      headers: {
+        'x-actor-id': 'teknisi-1',
+        'x-actor-name': 'Budi Santoso',
+        'x-actor-role': 'Teknisi'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(403);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('FORBIDDEN');
+  });
+
+  it('avg_resolution_hours null jika belum ada laporan selesai', async () => {
+    const { db } = createDashboardMockDb({ avgHours: null });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/dashboard', {
+      method: 'GET',
+      headers: {
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(body.dashboard.avg_resolution_hours).toBeNull();
+  });
+
+  it('Semua data agregat bernilai 0 untuk database kosong', async () => {
+    const { db } = createDashboardMockDb({
+      total: 0, active: 0, closed: 0, pendingAssign: 0,
+      perStatus: {}, perPriority: {}, perCategory: {}, avgHours: null
+    });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/dashboard', {
+      method: 'GET',
+      headers: {
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(body.dashboard.total).toBe(0);
+    expect(body.dashboard.active).toBe(0);
+    expect(body.dashboard.closed).toBe(0);
+    expect(body.dashboard.pending_assign).toBe(0);
+    expect(body.dashboard.avg_resolution_hours).toBeNull();
+    expect(Object.keys(body.dashboard.per_status).length).toBe(0);
+    expect(Object.keys(body.dashboard.per_priority).length).toBe(0);
+    expect(Object.keys(body.dashboard.per_category).length).toBe(0);
+  });
+});
+
   it('GET /api/reports/:reportId - ID non-numeric harus 400', async () => {
     const { db } = createDetailMockDb();
     const env = { DB: db, ATTACHMENTS: mockR2 } as Env;

@@ -314,6 +314,11 @@ export default function App() {
   const [detailReport, setDetailReport] = useState<Report | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
+
+  // Dashboard state (from API)
+  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardError, setDashboardError] = useState('');
   
   // Selection
   const [selectedReportId, setSelectedReportId] = useState<string>('CM-101');
@@ -494,6 +499,51 @@ export default function App() {
 
     return () => { controller.abort(); };
   }, [selectedReportId, activeSession.actorId, activeSession.actorName, activeSession.actorRole]);
+
+  // Dashboard fetch: when role is manajer, load stats from API
+  useEffect(() => {
+    if (activeRole !== 'manajer') return;
+
+    const controller = new AbortController();
+
+    const loadDashboard = async () => {
+      setDashboardLoading(true);
+      setDashboardError('');
+
+      try {
+        const response = await fetch('/api/dashboard', {
+          method: 'GET',
+          signal: controller.signal,
+          headers: {
+            'x-actor-id': activeSession.actorId,
+            'x-actor-name': activeSession.actorName,
+            'x-actor-role': activeSession.actorRole
+          }
+        });
+
+        const data: any = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || 'Gagal memuat dashboard.');
+        }
+
+        setDashboardData(data.dashboard);
+        setDashboardError('');
+      } catch (error: any) {
+        if (error.name === 'AbortError') return;
+        setDashboardError(error.message || 'Gagal memuat dashboard.');
+        setDashboardData(null);
+      } finally {
+        if (!controller.signal.aborted) {
+          setDashboardLoading(false);
+        }
+      }
+    };
+
+    loadDashboard();
+
+    return () => { controller.abort(); };
+  }, [activeRole, activeSession.actorId, activeSession.actorName, activeSession.actorRole]);
 
   // --- MAPPING & HELPERS ---
   const TECHNICIAN_ID_TO_NAME: Record<string, string> = {
@@ -1004,52 +1054,50 @@ export default function App() {
     : totalPages;
 
   // --- MANAGER ANALYTICS STATS ---
-  const stats = useMemo(() => {
-    const total = reports.length;
-    const active = reports.filter(r => r.status !== 'Ditutup' && r.status !== 'Ditolak').length;
-    const closed = reports.filter(r => r.status === 'Ditutup').length;
-    const pendingAssign = reports.filter(r => r.status === 'Baru' || r.status === 'Diperiksa').length;
-    
-    // Status breakdown counts
-    const statusCounts: Record<string, number> = {
-      'Baru': 0, 'Diperiksa': 0, 'Ditugaskan': 0, 'Sedang Dikerjakan': 0, 'Selesai Dikerjakan': 0, 'Ditutup': 0, 'Ditolak': 0, 'Dibuka Kembali': 0
+  const toLabel = (s: string) => {
+    const m: Record<string, string> = {
+      baru: 'Baru', diperiksa: 'Diperiksa', ditolak: 'Ditolak', ditugaskan: 'Ditugaskan',
+      diterima: 'Diterima', sedang_dikerjakan: 'Sedang Dikerjakan', selesai_dikerjakan: 'Selesai Dikerjakan',
+      ditutup: 'Ditutup', dibuka_kembali: 'Dibuka Kembali',
+      low: 'Rendah', medium: 'Sedang', high: 'Tinggi', urgent: 'Mendesak',
+      'Belum Ditentukan': 'Belum Ditentukan'
     };
-    
-    // Kategori breakdown counts
+    return m[s] || s;
+  };
+
+  const stats = useMemo(() => {
+    const d = dashboardData;
+    if (!d) {
+      return {
+        total: 0, active: 0, closed: 0, pendingAssign: 0, avgHours: null,
+        statusCounts: {} as Record<string, number>,
+        categoryCounts: {} as Record<string, number>,
+        priorityCounts: {} as Record<string, number>
+      };
+    }
+    const statusCounts: Record<string, number> = {};
+    for (const [k, v] of Object.entries(d.per_status || {})) {
+      statusCounts[toLabel(k)] = v as number;
+    }
     const categoryCounts: Record<string, number> = {};
-    CATEGORIES.forEach(c => { categoryCounts[c] = 0; });
-    categoryCounts['Belum Ditentukan'] = 0;
-    
-    // Prioritas breakdown counts
-    const priorityCounts = { 'Rendah': 0, 'Sedang': 0, 'Tinggi': 0, 'Mendesak': 0, 'Belum Ditentukan': 0 };
-
-    reports.forEach(r => {
-      if (statusCounts[r.status] !== undefined) statusCounts[r.status]++;
-      else statusCounts[r.status] = 1;
-      
-      if (r.category) {
-        categoryCounts[r.category] = (categoryCounts[r.category] || 0) + 1;
-      } else {
-        categoryCounts['Belum Ditentukan']++;
-      }
-      
-      if (r.priority) {
-        priorityCounts[r.priority]++;
-      } else {
-        priorityCounts['Belum Ditentukan']++;
-      }
-    });
-
+    for (const [k, v] of Object.entries(d.per_category || {})) {
+      categoryCounts[toLabel(k)] = v as number;
+    }
+    const priorityCounts: Record<string, number> = {};
+    for (const [k, v] of Object.entries(d.per_priority || {})) {
+      priorityCounts[toLabel(k)] = v as number;
+    }
     return {
-      total,
-      active,
-      closed,
-      pendingAssign,
+      total: d.total ?? 0,
+      active: d.active ?? 0,
+      closed: d.closed ?? 0,
+      pendingAssign: d.pending_assign ?? 0,
+      avgHours: d.avg_resolution_hours ?? null,
       statusCounts,
       categoryCounts,
       priorityCounts
     };
-  }, [reports]);
+  }, [dashboardData]);
 
   // Helper to count status numbers for top bar
   const getStatusCount = (statusName: string) => {
@@ -1137,6 +1185,12 @@ export default function App() {
       {activeRole === 'manajer' ? (
         <div className="manager-dashboard animate-slide-up">
           
+          {dashboardLoading ? (
+            <div className="empty-state">Memuat data dashboard...</div>
+          ) : dashboardError ? (
+            <div className="empty-state" style={{ color: 'var(--color-accent)' }}>Gagal memuat: {dashboardError}</div>
+          ) : dashboardData ? (<>
+          
           {/* KPI Cards */}
           <div className="kpi-grid">
             <div className="kpi-card">
@@ -1158,6 +1212,11 @@ export default function App() {
               <span className="kpi-label">Menunggu Penugasan</span>
               <span className="kpi-value">{stats.pendingAssign}</span>
               <span className="kpi-subtext">Belum memiliki teknisi</span>
+            </div>
+            <div className="kpi-card" style={{ borderColor: 'var(--color-secondary)' }}>
+              <span className="kpi-label">Rata-rata Waktu Selesai</span>
+              <span className="kpi-value">{stats.avgHours != null ? `${stats.avgHours}` : '—'}</span>
+              <span className="kpi-subtext">Jam sejak laporan dibuat</span>
             </div>
           </div>
 
@@ -1200,6 +1259,39 @@ export default function App() {
               </div>
             </div>
 
+            {/* Priority Breakdown (Vertical Bar Chart) */}
+            <div className="chart-card">
+              <span className="chart-title">Distribusi Prioritas</span>
+              <div className="bar-chart-vertical">
+                {Object.entries(stats.priorityCounts).map(([priority, count]) => {
+                  const maxCount = Math.max(...Object.values(stats.priorityCounts), 1);
+                  const percentage = (count / maxCount) * 100;
+                  
+                  let barColor = '#cbd5e1';
+                  if (priority === 'Mendesak') barColor = 'var(--color-accent)';
+                  else if (priority === 'Tinggi') barColor = 'var(--color-warning)';
+                  else if (priority === 'Sedang') barColor = 'var(--color-info)';
+                  else if (priority === 'Rendah') barColor = 'var(--color-primary-light)';
+                  
+                  return (
+                    <div className="bar-item-vertical" key={priority}>
+                      <div 
+                        className="bar-fill-vertical" 
+                        style={{ 
+                          height: `${Math.max(percentage, 5)}%`, 
+                          backgroundColor: barColor 
+                        }}
+                        title={`${priority}: ${count} Laporan`}
+                      >
+                        {count > 0 ? count : ''}
+                      </div>
+                      <div className="bar-label-vertical" title={priority}>{priority}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Kategori Breakdown (Horizontal Bar Chart) */}
             <div className="chart-card">
               <span className="chart-title">Distribusi Kategori Masalah</span>
@@ -1229,7 +1321,7 @@ export default function App() {
 
           </div>
 
-          {/* Low Panel (Auditing List) */}
+          {/* Auditing Table */}
           <div className="chart-card">
             <span className="chart-title">Daftar Pantau Seluruh Laporan Fasilitas</span>
             <div style={{ overflowX: 'auto' }}>
@@ -1245,13 +1337,13 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {reports.map(r => (
+                  {listReports.slice(0, 5).map(r => (
                     <tr 
-                      key={r.id} 
+                      key={r.reportCode} 
                       style={{ borderBottom: '1px solid var(--color-border-subtle)', cursor: 'pointer' }}
-                      onClick={() => { setActiveRole('admin'); setSelectedReportId(r.id); }}
+                      onClick={() => { setActiveRole('admin'); setSelectedReportId(r.reportCode); }}
                     >
-                      <td style={{ padding: '10px 8px', fontWeight: 700 }}>{r.id}</td>
+                      <td style={{ padding: '10px 8px', fontWeight: 700 }}>{r.reportCode}</td>
                       <td style={{ padding: '10px 8px' }}>
                         <div>{r.title}</div>
                         <div style={{ fontSize: '0.7rem', color: 'var(--color-fg-light)' }}>Kategori: {r.category || 'Belum diisi'}</div>
@@ -1276,6 +1368,10 @@ export default function App() {
               </table>
             </div>
           </div>
+
+          </>) : (
+            <div className="empty-state">Memuat data dashboard...</div>
+          )}
 
         </div>
       ) : (

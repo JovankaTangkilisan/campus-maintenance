@@ -961,6 +961,78 @@ router.get('/api/reports/:reportId', mockAuth(), async (_request, ctx) => {
   });
 });
 
+// 24. Rute Dashboard Statistik (GET /api/dashboard) - Khusus Administrator & Manajer Fasilitas
+router.get('/api/dashboard', mockAuth(['Administrator', 'Manajer Fasilitas']), async (_request, ctx) => {
+  // 1. Total laporan
+  const totalRow = await ctx.env.DB.prepare('SELECT COUNT(*) as value FROM service_requests').first<any>();
+
+  // 2. Laporan aktif (semua status kecuali ditutup & ditolak)
+  const activeRow = await ctx.env.DB.prepare(
+    `SELECT COUNT(*) as value FROM service_requests WHERE status NOT IN ('ditutup', 'ditolak')`
+  ).first<any>();
+
+  // 3. Laporan ditutup
+  const closedRow = await ctx.env.DB.prepare(
+    `SELECT COUNT(*) as value FROM service_requests WHERE status = 'ditutup'`
+  ).first<any>();
+
+  // 4. Laporan menunggu penugasan (baru / diperiksa)
+  const pendingAssignRow = await ctx.env.DB.prepare(
+    `SELECT COUNT(*) as value FROM service_requests WHERE status IN ('baru', 'diperiksa')`
+  ).first<any>();
+
+  // 5. Per status
+  const statusRows = await ctx.env.DB.prepare(
+    `SELECT status, COUNT(*) as count FROM service_requests GROUP BY status ORDER BY status`
+  ).all<any>();
+
+  // 6. Per prioritas
+  const priorityRows = await ctx.env.DB.prepare(
+    `SELECT COALESCE(priority, 'Belum Ditentukan') as priority, COUNT(*) as count FROM service_requests GROUP BY priority ORDER BY priority`
+  ).all<any>();
+
+  // 7. Per kategori
+  const categoryRows = await ctx.env.DB.prepare(
+    `SELECT COALESCE(category, 'Belum Ditentukan') as category, COUNT(*) as count FROM service_requests GROUP BY category ORDER BY category`
+  ).all<any>();
+
+  // 8. Rata-rata waktu penyelesaian (dalam jam) untuk laporan yang sudah ditutup
+  const avgRow = await ctx.env.DB.prepare(
+    `SELECT AVG((julianday(completed_at) - julianday(created_at)) * 24) as avg_hours
+     FROM service_requests
+     WHERE completed_at IS NOT NULL AND created_at IS NOT NULL`
+  ).first<any>();
+
+  const statusMap: Record<string, number> = {};
+  for (const row of statusRows.results) {
+    statusMap[row.status] = row.count;
+  }
+
+  const priorityMap: Record<string, number> = {};
+  for (const row of priorityRows.results) {
+    priorityMap[row.priority] = row.count;
+  }
+
+  const categoryMap: Record<string, number> = {};
+  for (const row of categoryRows.results) {
+    categoryMap[row.category] = row.count;
+  }
+
+  return Response.json({
+    success: true,
+    dashboard: {
+      total: Number(totalRow?.value ?? 0),
+      active: Number(activeRow?.value ?? 0),
+      closed: Number(closedRow?.value ?? 0),
+      pending_assign: Number(pendingAssignRow?.value ?? 0),
+      avg_resolution_hours: avgRow?.avg_hours != null ? Math.round(Number(avgRow.avg_hours) * 100) / 100 : null,
+      per_status: statusMap,
+      per_priority: priorityMap,
+      per_category: categoryMap
+    }
+  });
+});
+
 // Export default worker handler
 export default {
   async fetch(request: Request, env: Env, executionCtx: ExecutionContext): Promise<Response> {
