@@ -22,4 +22,5 @@ export type Middleware = (
 
 export interface Env {
   DB: D1Database;
+  ATTACHMENTS: R2Bucket;
 }

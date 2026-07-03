@@ -4,7 +4,7 @@ import type { Env } from '../types';
 
 // Mocking D1 Database
 const mockDB = {
-  prepare: (_sql: string) => {
+  prepare: (sql: string) => {
     let boundArgs: any[] = [];
     const stmt = {
       bind: (...args: any[]) => {
@@ -18,6 +18,16 @@ const mockDB = {
         };
       },
       first: async () => {
+        if (sql.includes('service_request_attachments')) {
+          return {
+            id: 888,
+            service_request_id: 999,
+            file_path: 'reports/999/12345_photo.jpg',
+            file_name: 'photo.jpg',
+            file_type: 'image/jpeg',
+            file_size: 1024
+          };
+        }
         return {
           id: 999,
           title: boundArgs[0] || 'Test Laporan',
@@ -53,8 +63,19 @@ const mockDB = {
   }
 } as unknown as D1Database;
 
+// Mocking R2 Bucket
+const mockR2 = {
+  put: async (key: string, value: any, _options?: any) => {
+    return {
+      key,
+      size: value.byteLength || 1024
+    };
+  }
+} as unknown as R2Bucket;
+
 const mockEnv = {
-  DB: mockDB
+  DB: mockDB,
+  ATTACHMENTS: mockR2
 } as Env;
 
 const mockCtx = {} as ExecutionContext;
@@ -228,5 +249,76 @@ describe('POST /api/reports - Create Service Request Features', () => {
     const body: any = await response.json();
     expect(body.error).toBe('FORBIDDEN');
     expect(body.message).toContain('Access denied');
+  });
+
+  it('POST /api/reports/:reportId/attachments - Pelapor (pemilik) mengunggah file gambar valid harus menghasilkan 201 Created', async () => {
+    const formData = new FormData();
+    const mockFile = new Blob(['image data'], { type: 'image/jpeg' });
+    formData.append('file', mockFile, 'photo.jpg');
+
+    const request = new Request('http://localhost/api/reports/999/attachments', {
+      method: 'POST',
+      headers: {
+        'x-actor-id': 'pelapor-1',
+        'x-actor-name': 'Fajar Ramadhan',
+        'x-actor-role': 'Pelapor'
+      },
+      body: formData
+    });
+
+    const response = await router.handle(request, mockEnv, mockCtx);
+    expect(response.status).toBe(201);
+
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.attachment.id).toBe(888);
+    expect(body.attachment.file_name).toBe('photo.jpg');
+    expect(body.attachment.file_type).toBe('image/jpeg');
+  });
+
+  it('POST /api/reports/:reportId/attachments - Mengunggah file bukan gambar harus mengembalikan 400 VALIDATION_ERROR', async () => {
+    const formData = new FormData();
+    const mockFile = new Blob(['text data'], { type: 'text/plain' });
+    formData.append('file', mockFile, 'test_doc.txt');
+
+    const request = new Request('http://localhost/api/reports/999/attachments', {
+      method: 'POST',
+      headers: {
+        'x-actor-id': 'pelapor-1',
+        'x-actor-name': 'Fajar Ramadhan',
+        'x-actor-role': 'Pelapor'
+      },
+      body: formData
+    });
+
+    const response = await router.handle(request, mockEnv, mockCtx);
+    expect(response.status).toBe(400);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('VALIDATION_ERROR');
+    expect(body.message).toContain('Only JPEG and PNG images are allowed');
+  });
+
+  it('POST /api/reports/:reportId/attachments - Mencoba mengunggah ke laporan milik orang lain harus mengembalikan 403 Forbidden', async () => {
+    const formData = new FormData();
+    const mockFile = new Blob(['image data'], { type: 'image/png' });
+    formData.append('file', mockFile, 'photo.png');
+
+    const request = new Request('http://localhost/api/reports/999/attachments', {
+      method: 'POST',
+      headers: {
+        'x-actor-id': 'pelapor-2',
+        'x-actor-name': 'John Doe',
+        'x-actor-role': 'Pelapor'
+      },
+      body: formData
+    });
+
+    const response = await router.handle(request, mockEnv, mockCtx);
+    expect(response.status).toBe(403);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('FORBIDDEN');
+    expect(body.message).toContain('Access denied. You do not own this service request');
   });
 });

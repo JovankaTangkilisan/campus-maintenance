@@ -30,6 +30,7 @@ interface Report {
   dateCreated: string;
   history: HistoryEntry[];
   comments: CommentEntry[];
+  attachments?: any[];
 }
 
 // --- MOCK CONSTANTS ---
@@ -240,6 +241,7 @@ export default function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   
   // Technician specific filters
   const [selectedTechnicianName, setSelectedTechnicianName] = useState<string>('Budi Santoso');
@@ -312,7 +314,13 @@ export default function App() {
       })) : [
         { status: 'Baru', actor: authorName, timestamp: dbReport.created_at, notes: 'Laporan berhasil diajukan.' }
       ],
-      comments: []
+      comments: [],
+      attachments: dbReport.attachments ? dbReport.attachments.map((att: any) => ({
+        file_name: att.file_name,
+        file_type: att.file_type,
+        file_size: att.file_size,
+        file_url: att.file_url || `https://placehold.co/200x150?text=${encodeURIComponent(att.file_name)}`
+      })) : []
     };
   };
 
@@ -369,9 +377,35 @@ export default function App() {
         throw new Error(data.message || 'Terjadi kesalahan saat menyimpan laporan.');
       }
 
+      let finalReport = { ...data.report, attachments: [] as any[] };
+
+      // Jika ada berkas lampiran yang dipilih, lakukan unggah ke R2
+      if (selectedFile) {
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+
+        const attachResponse = await fetch(`/api/reports/${data.report.id}/attachments`, {
+          method: 'POST',
+          headers: {
+            'x-actor-id': actorId,
+            'x-actor-name': actorName,
+            'x-actor-role': roleHeader
+          },
+          body: formData
+        });
+
+        const attachData: any = await attachResponse.json();
+
+        if (!attachResponse.ok) {
+          throw new Error(attachData.message || 'Laporan berhasil dibuat, tetapi gagal mengunggah lampiran foto.');
+        }
+
+        finalReport.attachments = [attachData.attachment];
+      }
+
       setSubmitSuccess(true);
 
-      const newUiReport = mapDbReportToUi(data.report, actorName);
+      const newUiReport = mapDbReportToUi(finalReport, actorName);
       setReports([newUiReport, ...reports]);
       setSelectedReportId(newUiReport.id);
 
@@ -381,6 +415,7 @@ export default function App() {
         setNewDescription('');
         setNewLocation('');
         setNewCategory('');
+        setSelectedFile(null);
         setSubmitSuccess(false);
         setIsNewReportModalOpen(false);
       }, 1500);
@@ -390,6 +425,32 @@ export default function App() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setSelectedFile(null);
+      return;
+    }
+
+    // Validasi format file (hanya JPEG/PNG)
+    if (file.type !== 'image/jpeg' && file.type !== 'image/png') {
+      alert('Hanya diperbolehkan mengunggah file gambar dengan format JPEG atau PNG!');
+      e.target.value = ''; // Reset input
+      setSelectedFile(null);
+      return;
+    }
+
+    // Validasi batas ukuran file (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Ukuran file tidak boleh melebihi batas maksimal 5MB!');
+      e.target.value = ''; // Reset input
+      setSelectedFile(null);
+      return;
+    }
+
+    setSelectedFile(file);
   };
 
   // UC-05: Memeriksa Laporan (Terima/Tolak)
@@ -1106,6 +1167,26 @@ export default function App() {
                   <div className="description-text">{selectedReport.description}</div>
                 </div>
 
+                {selectedReport.attachments && selectedReport.attachments.length > 0 && (
+                  <div className="info-block" style={{ marginTop: '16px' }}>
+                    <h3 className="section-title">Lampiran Foto Bukti</h3>
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '8px' }}>
+                      {selectedReport.attachments.map((att: any, idx: number) => (
+                        <div key={idx} style={{ border: '1px solid var(--color-border-subtle)', borderRadius: '8px', overflow: 'hidden', padding: '8px', backgroundColor: 'var(--color-bg-base)', maxWidth: '240px', boxShadow: 'var(--shadow-sm)' }}>
+                          <img 
+                            src={att.file_url} 
+                            alt={att.file_name} 
+                            style={{ width: '100%', maxHeight: '160px', objectFit: 'cover', borderRadius: '6px', display: 'block' }} 
+                          />
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-fg-muted)', marginTop: '6px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', fontWeight: 500 }} title={att.file_name}>
+                            📎 {att.file_name}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* --- CONTEXTUAL ACTION BOXES PER ROLE --- */}
                 
                 {/* 1. PELAPOR ACTION BOX: Confirm Work Completion */}
@@ -1476,6 +1557,18 @@ export default function App() {
                     onChange={(e) => setNewDescription(e.target.value)}
                     required
                     disabled={isSubmitting}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Lampiran Foto Bukti (Opsional, Maks 5MB, format JPEG/PNG)</label>
+                  <input 
+                    type="file" 
+                    accept="image/jpeg, image/png"
+                    onChange={handleFileChange}
+                    className="form-input"
+                    disabled={isSubmitting}
+                    style={{ padding: '6px' }}
                   />
                 </div>
 

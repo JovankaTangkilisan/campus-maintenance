@@ -47,5 +47,11 @@
 			"database_name": "campus-maintenance-db",
 			"database_id": "c3fbbe87-3475-4bb6-b605-e1fb2c31e21b"
 		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "ATTACHMENTS",
+			"bucket_name": "campus-maintenance-attachments"
+		}
 	]
 }
