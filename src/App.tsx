@@ -805,30 +805,67 @@ export default function App() {
     }
   };
 
-  // UC-08: Mengubah Status Pekerjaan (Teknisi)
-  const handleUpdateJobStatus = (nextStatus: 'Diterima' | 'Sedang Dikerjakan' | 'Selesai Dikerjakan' | 'Diperiksa') => {
+  // UC-08: Mengubah Status Pekerjaan (Teknisi) via API
+  const handleUpdateJobStatus = async (nextStatus: 'Diterima' | 'Sedang Dikerjakan' | 'Selesai Dikerjakan' | 'Diperiksa') => {
+    if (!selectedReportId || !activeRole) return;
+
+    const session = getSessionForRole(activeRole);
+    const reportId = selectedReportId.replace('CM-', '');
+
+    // Accept dan reject via API; status lain tetap lokal
+    if (nextStatus === 'Diterima') {
+      try {
+        const res = await fetch(`/api/reports/${reportId}/assignment/accept`, {
+          method: 'POST',
+          headers: {
+            'x-actor-id': session.actorId,
+            'x-actor-name': session.actorName,
+            'x-actor-role': session.actorRole
+          }
+        });
+        const data = await res.json();
+        if (!res.ok) { alert(`Gagal: ${data.message}`); return; }
+        setListRefreshToken(t => t + 1);
+      } catch (err: any) { alert(`Gagal terhubung ke server: ${err.message}`); }
+      return;
+    }
+
+    if (nextStatus === 'Diperiksa') {
+      const reason = rejectReason.trim() || 'Tidak disebutkan';
+      try {
+        const res = await fetch(`/api/reports/${reportId}/assignment/reject`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-actor-id': session.actorId,
+            'x-actor-name': session.actorName,
+            'x-actor-role': session.actorRole
+          },
+          body: JSON.stringify({ rejection_reason: reason })
+        });
+        const data = await res.json();
+        if (!res.ok) { alert(`Gagal: ${data.message}`); return; }
+        setListRefreshToken(t => t + 1);
+        setRejectReason('');
+      } catch (err: any) { alert(`Gagal terhubung ke server: ${err.message}`); }
+      return;
+    }
+
+    // Sedang Dikerjakan / Selesai Dikerjakan — tetap lokal (future API)
     const timestamp = getCurrentTimestamp();
     const actorName = selectedTechnicianName;
-    
     setReports(prev => prev.map(r => {
       if (r.id !== selectedReportId) return r;
-      
       let note = '';
-      if (nextStatus === 'Diterima') note = 'Tugas diterima oleh teknisi.';
-      else if (nextStatus === 'Sedang Dikerjakan') note = 'Pekerjaan mulai dikerjakan di lokasi.';
+      if (nextStatus === 'Sedang Dikerjakan') note = 'Pekerjaan mulai dikerjakan di lokasi.';
       else if (nextStatus === 'Selesai Dikerjakan') note = 'Pekerjaan selesai. Mengirim konfirmasi ke pelapor.';
-      else if (nextStatus === 'Diperiksa') note = `Tugas ditolak oleh teknisi. Alasan: ${rejectReason || 'Tidak disebutkan'}`;
-      
       return {
         ...r,
         status: nextStatus,
-        // If rejected, remove assigned technician so admin can reassign
-        technician: nextStatus === 'Diperiksa' ? '' : r.technician,
-        history: [
-          ...r.history,
-          { status: nextStatus, actor: actorName, timestamp, notes: note }
-        ]
+        history: [...r.history, { status: nextStatus, actor: actorName, timestamp, notes: note }]
       };
+    }));
+  };
     }));
     
     setRejectReason('');

@@ -51,6 +51,9 @@ CREATE TABLE IF NOT EXISTS service_request_assignments (
     assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
     status TEXT NOT NULL CHECK(status IN ('assigned', 'accepted', 'rejected', 'completed')) DEFAULT 'assigned',
     is_active INTEGER DEFAULT 1,
+    acknowledged_at DATETIME,
+    rejected_at DATETIME,
+    rejection_reason TEXT,
     FOREIGN KEY (service_request_id) REFERENCES service_requests(id) ON DELETE CASCADE
 );
 

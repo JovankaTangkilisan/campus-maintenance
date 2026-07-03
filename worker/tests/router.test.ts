@@ -1130,6 +1130,238 @@ describe('PATCH /api/reports/:reportId/triage - Triage (Admin approve/reject)', 
   });
 });
 
+function createAcceptRejectMockDb(options?: {
+  assignment?: any;
+  reportStatus?: string;
+}) {
+  const queries: QueryLog[] = [];
+
+  const db = {
+    prepare: (sql: string) => {
+      let boundArgs: any[] = [];
+      const stmt = {
+        bind: (...args: any[]) => {
+          boundArgs = args;
+          return stmt;
+        },
+        run: async () => {
+          queries.push({ sql, args: boundArgs });
+          return { success: true, meta: { last_row_id: 777 } };
+        },
+        first: async () => {
+          queries.push({ sql, args: boundArgs });
+          if (sql.includes('FROM service_request_assignments a') && sql.includes('JOIN service_requests sr')) {
+            if (options && 'assignment' in options) return options.assignment;
+            return {
+              id: 555,
+              technician_id: 'teknisi-1',
+              status: 'ditugaskan'
+            };
+          }
+          return null;
+        },
+        all: async () => {
+          queries.push({ sql, args: boundArgs });
+          return { success: true, results: [] };
+        }
+      };
+      return stmt;
+    }
+  } as unknown as D1Database;
+
+  return { db, queries };
+}
+
+describe('POST /api/reports/:reportId/assignment/accept - Accept assignment', () => {
+  it('Teknisi menerima tugas yang ditugaskan harus 200', async () => {
+    const { db, queries } = createAcceptRejectMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/assignment/accept', {
+      method: 'POST',
+      headers: {
+        'x-actor-id': 'teknisi-1',
+        'x-actor-name': 'Budi Santoso',
+        'x-actor-role': 'Teknisi'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+
+    // Update assignment status + acknowledged_at
+    const assignUpdateQueries = queries.filter(q =>
+      q.sql.includes('UPDATE service_request_assignments') && q.sql.includes("status = 'accepted'")
+    );
+    expect(assignUpdateQueries.length).toBe(1);
+    expect(assignUpdateQueries[0].args[0]).toBe(555);
+
+    // Update report status
+    const reportUpdateQueries = queries.filter(q =>
+      q.sql.includes('UPDATE service_requests') && q.sql.includes("status = 'diterima'")
+    );
+    expect(reportUpdateQueries.length).toBe(1);
+
+    // History
+    const historyQueries = queries.filter(q => q.sql.includes('INSERT INTO service_request_status_history'));
+    expect(historyQueries.length).toBe(1);
+    expect(historyQueries[0].sql).toContain('diterima');
+  });
+
+  it('Teknisi lain yang tidak ditugaskan harus 403', async () => {
+    const { db } = createAcceptRejectMockDb({ assignment: null });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/assignment/accept', {
+      method: 'POST',
+      headers: {
+        'x-actor-id': 'teknisi-2',
+        'x-actor-name': 'Andi Wijaya',
+        'x-actor-role': 'Teknisi'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(403);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('FORBIDDEN');
+  });
+
+  it('ID non-numeric harus 400', async () => {
+    const { db } = createAcceptRejectMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/abc/assignment/accept', {
+      method: 'POST',
+      headers: {
+        'x-actor-id': 'teknisi-1',
+        'x-actor-name': 'Budi Santoso',
+        'x-actor-role': 'Teknisi'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(400);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('POST /api/reports/:reportId/assignment/reject - Reject assignment', () => {
+  it('Teknisi menolak tugas dengan alasan harus 200', async () => {
+    const { db, queries } = createAcceptRejectMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/assignment/reject', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'teknisi-1',
+        'x-actor-name': 'Budi Santoso',
+        'x-actor-role': 'Teknisi'
+      },
+      body: JSON.stringify({ rejection_reason: 'Lokasi terlalu jauh' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+
+    // Deaktivasi assignment + catat alasan
+    const deactivateQueries = queries.filter(q =>
+      q.sql.includes('UPDATE service_request_assignments') && q.sql.includes('is_active = 0')
+    );
+    expect(deactivateQueries.length).toBe(1);
+    expect(deactivateQueries[0].args[0]).toBe('Lokasi terlalu jauh');
+    expect(deactivateQueries[0].args[1]).toBe(555);
+
+    // Kembalikan status laporan ke diperiksa
+    const reportUpdateQueries = queries.filter(q =>
+      q.sql.includes('UPDATE service_requests') && q.sql.includes("status = 'diperiksa'")
+    );
+    expect(reportUpdateQueries.length).toBe(1);
+
+    // History
+    const historyQueries = queries.filter(q => q.sql.includes('INSERT INTO service_request_status_history'));
+    expect(historyQueries.length).toBe(1);
+    expect(historyQueries[0].sql).toContain('diperiksa');
+  });
+
+  it('Menolak tanpa alasan harus 400', async () => {
+    const { db } = createAcceptRejectMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/assignment/reject', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'teknisi-1',
+        'x-actor-name': 'Budi Santoso',
+        'x-actor-role': 'Teknisi'
+      },
+      body: JSON.stringify({ rejection_reason: '' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(400);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('VALIDATION_ERROR');
+    expect(body.message).toContain('Rejection reason is required');
+  });
+
+  it('Teknisi lain yang tidak ditugaskan harus 403', async () => {
+    const { db } = createAcceptRejectMockDb({ assignment: null });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/assignment/reject', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'teknisi-2',
+        'x-actor-name': 'Andi Wijaya',
+        'x-actor-role': 'Teknisi'
+      },
+      body: JSON.stringify({ rejection_reason: 'Lokasi terlalu jauh' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(403);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('FORBIDDEN');
+  });
+
+  it('ID non-numeric harus 400', async () => {
+    const { db } = createAcceptRejectMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/abc/assignment/reject', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'teknisi-1',
+        'x-actor-name': 'Budi Santoso',
+        'x-actor-role': 'Teknisi'
+      },
+      body: JSON.stringify({ rejection_reason: 'Lokasi terlalu jauh' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(400);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('VALIDATION_ERROR');
+  });
+});
+
 function createAssignMockDb(options?: {
   report?: any;
   updatedReport?: any;
