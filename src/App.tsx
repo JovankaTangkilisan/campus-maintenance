@@ -691,30 +691,56 @@ export default function App() {
     setSelectedFile(file);
   };
 
-  // UC-05: Memeriksa Laporan (Terima/Tolak)
-  const handleVerifyReport = (accept: boolean) => {
-    const timestamp = getCurrentTimestamp();
-    setReports(prev => prev.map(r => {
-      if (r.id !== selectedReportId) return r;
-      
-      const newStatus = accept ? 'Diperiksa' : 'Ditolak';
-      const reasonNotes = accept 
-        ? `Laporan diperiksa & kategori disetujui: ${assignCategory || 'Lain-lain'}` 
-        : `Laporan ditolak. Alasan: ${rejectReason || 'Masalah tidak valid'}`;
-        
-      return {
-        ...r,
-        status: newStatus,
-        category: accept ? (assignCategory || 'Lain-lain') : r.category,
-        history: [
-          ...r.history,
-          { status: newStatus, actor: 'Administrator', timestamp, notes: reasonNotes }
-        ]
-      };
-    }));
-    
-    // Reset inputs
-    setRejectReason('');
+  // UC-05: Memeriksa Laporan via API (Terima/Tolak)
+  const handleVerifyReport = async (accept: boolean) => {
+    if (!selectedReportId || !activeRole) return;
+
+    const session = getSessionForRole(activeRole);
+    const uiToApiPriority: Record<string, string> = {
+      'Rendah': 'low',
+      'Sedang': 'medium',
+      'Tinggi': 'high',
+      'Mendesak': 'urgent'
+    };
+
+    try {
+      const action = accept ? 'approve' : 'reject';
+      const body: Record<string, string> = { action };
+
+      if (accept) {
+        if (!assignCategory) return;
+        if (!assignPriority) return;
+        body.category = assignCategory;
+        body.priority = uiToApiPriority[assignPriority] || 'medium';
+      } else {
+        body.rejection_reason = rejectReason.trim() || 'Masalah tidak valid';
+      }
+
+      const response = await fetch(`/api/reports/${selectedReportId.replace('CM-', '')}/triage`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-actor-id': session.actorId,
+          'x-actor-name': session.actorName,
+          'x-actor-role': session.actorRole
+        },
+        body: JSON.stringify(body)
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        alert(`Gagal: ${data.message || 'Terjadi kesalahan saat memproses laporan.'}`);
+        return;
+      }
+
+      // Refresh list untuk memperbarui data detail
+      setListRefreshToken(t => t + 1);
+      setAssignCategory('');
+      setAssignPriority('');
+      setRejectReason('');
+    } catch (err: any) {
+      alert(`Gagal terhubung ke server: ${err.message}`);
+    }
   };
 
   // UC-06: Menentukan Prioritas
@@ -1548,14 +1574,29 @@ export default function App() {
                               ))}
                             </select>
                           </div>
+
+                          <div className="form-group">
+                            <label className="form-label">Tingkat Prioritas</label>
+                            <select 
+                              className="form-select"
+                              value={assignPriority}
+                              onChange={(e) => setAssignPriority(e.target.value as any)}
+                            >
+                              <option value="">-- Pilih Prioritas --</option>
+                              <option value="Rendah">Rendah (Fungsi kosmetik, minor)</option>
+                              <option value="Sedang">Sedang (Ada alternatif/dapat digunakan terbatas)</option>
+                              <option value="Tinggi">Tinggi (Merusak jalannya aktivitas belajar)</option>
+                              <option value="Mendesak">Mendesak (Isu keselamatan/fasilitas kritis lumpuh)</option>
+                            </select>
+                          </div>
                           
                           <button 
                             className="btn btn-primary"
                             onClick={() => handleVerifyReport(true)}
-                            disabled={!assignCategory}
-                            style={{ height: '42px', opacity: assignCategory ? 1 : 0.6 }}
+                            disabled={!assignCategory || !assignPriority}
+                            style={{ height: '42px', opacity: (assignCategory && assignPriority) ? 1 : 0.6 }}
                           >
-                            <Icons.Check /> Setujui & Proses
+                            <Icons.Check /> Simpan Triase
                           </button>
                         </div>
 

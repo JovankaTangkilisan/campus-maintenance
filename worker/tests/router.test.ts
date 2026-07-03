@@ -773,6 +773,363 @@ describe('GET /api/reports/:reportId - Detail report features', () => {
     expect(body.message).toContain('Service request not found');
   });
 
+function createTriageMockDb(options?: {
+  report?: any;
+  updatedReport?: any;
+}) {
+  const queries: QueryLog[] = [];
+  let updateStep = 0;
+
+  const db = {
+    prepare: (sql: string) => {
+      let boundArgs: any[] = [];
+      const stmt = {
+        bind: (...args: any[]) => {
+          boundArgs = args;
+          return stmt;
+        },
+        run: async () => {
+          queries.push({ sql, args: boundArgs });
+          updateStep++;
+          return { success: true, meta: { last_row_id: 101 } };
+        },
+        first: async () => {
+          queries.push({ sql, args: boundArgs });
+        // First SELECT — check status
+        if (sql.includes('SELECT id, status FROM')) {
+          if (options && 'report' in options) return options.report;
+          return { id: 101, status: 'baru' };
+        }
+          // Second SELECT — after update
+          if (sql.includes('SELECT id, title, description, location, category, priority, status, created_by, created_at, updated_at, rejection_reason FROM')) {
+            return options?.updatedReport ?? {
+              id: 101,
+              title: 'AC Mati di Lab Komputer',
+              description: 'AC tidak menyala sejak pagi.',
+              location: 'Gedung D, Lantai 2',
+              category: 'AC & Pendingin Ruangan',
+              priority: 'high',
+              status: 'diperiksa',
+              created_by: 'pelapor-1',
+              created_at: '2026-07-03 09:00:00',
+              updated_at: '2026-07-03 10:00:00',
+              rejection_reason: null
+            };
+          }
+          return null;
+        },
+        all: async () => {
+          queries.push({ sql, args: boundArgs });
+          return { success: true, results: [] };
+        }
+      };
+      return stmt;
+    }
+  } as unknown as D1Database;
+
+  return { db, queries };
+}
+
+describe('PATCH /api/reports/:reportId/triage - Triage (Admin approve/reject)', () => {
+  it('PATCH /api/reports/:reportId/triage - Admin menyetujui laporan dengan kategori dan prioritas valid harus 200', async () => {
+    const { db, queries } = createTriageMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/triage', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: JSON.stringify({
+        action: 'approve',
+        category: 'AC & Pendingin Ruangan',
+        priority: 'high'
+      })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.report.status).toBe('diperiksa');
+    expect(body.report.category).toBe('AC & Pendingin Ruangan');
+    expect(body.report.priority).toBe('high');
+    expect(body.report.rejection_reason).toBeNull();
+
+    // Verifikasi query sequence: SELECT → UPDATE → INSERT → SELECT
+    const updateQueries = queries.filter(q => q.sql.includes('UPDATE service_requests'));
+    expect(updateQueries.length).toBe(1);
+    expect(updateQueries[0].sql).toContain('status = \'diperiksa\'');
+    expect(updateQueries[0].args).toContain('AC & Pendingin Ruangan');
+    expect(updateQueries[0].args).toContain('high');
+
+    const insertQueries = queries.filter(q => q.sql.includes('INSERT INTO service_request_status_history'));
+    expect(insertQueries.length).toBe(1);
+    expect(insertQueries[0].sql).toContain('diperiksa');
+  });
+
+  it('PATCH /api/reports/:reportId/triage - Admin menolak laporan dengan alasan valid harus 200', async () => {
+    const { db, queries } = createTriageMockDb({
+      updatedReport: {
+        id: 101,
+        title: 'AC Mati di Lab Komputer',
+        description: 'AC tidak menyala sejak pagi.',
+        location: 'Gedung D, Lantai 2',
+        category: 'AC & Pendingin Ruangan',
+        priority: 'low',
+        status: 'ditolak',
+        created_by: 'pelapor-1',
+        created_at: '2026-07-03 09:00:00',
+        updated_at: '2026-07-03 10:00:00',
+        rejection_reason: 'Tiket duplikat dengan CM-99'
+      }
+    });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/triage', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: JSON.stringify({
+        action: 'reject',
+        rejection_reason: 'Tiket duplikat dengan CM-99'
+      })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.report.status).toBe('ditolak');
+    expect(body.report.rejection_reason).toBe('Tiket duplikat dengan CM-99');
+
+    const updateQueries = queries.filter(q => q.sql.includes('UPDATE service_requests'));
+    expect(updateQueries.length).toBe(1);
+    expect(updateQueries[0].sql).toContain('status = \'ditolak\'');
+    expect(updateQueries[0].args[0]).toBe('Tiket duplikat dengan CM-99');
+
+    const insertQueries = queries.filter(q => q.sql.includes('INSERT INTO service_request_status_history'));
+    expect(insertQueries.length).toBe(1);
+    expect(insertQueries[0].sql).toContain('ditolak');
+  });
+
+  it('PATCH /api/reports/:reportId/triage - Mengirim action invalid harus 400', async () => {
+    const { db } = createTriageMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/triage', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: JSON.stringify({ action: 'unknown' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(400);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('VALIDATION_ERROR');
+    expect(body.message).toContain('Action must be either "approve" or "reject"');
+  });
+
+  it('PATCH /api/reports/:reportId/triage - Approve tanpa category harus 400', async () => {
+    const { db } = createTriageMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/triage', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: JSON.stringify({ action: 'approve', priority: 'high' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(400);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('VALIDATION_ERROR');
+    expect(body.message).toContain('Category is required');
+  });
+
+  it('PATCH /api/reports/:reportId/triage - Approve dengan priority invalid harus 400', async () => {
+    const { db } = createTriageMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/triage', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: JSON.stringify({ action: 'approve', category: 'AC', priority: 'super-urgent' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(400);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('VALIDATION_ERROR');
+    expect(body.message).toContain('Priority must be one of');
+  });
+
+  it('PATCH /api/reports/:reportId/triage - Reject tanpa rejection_reason harus 400', async () => {
+    const { db } = createTriageMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/triage', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: JSON.stringify({ action: 'reject', rejection_reason: '' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(400);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('VALIDATION_ERROR');
+    expect(body.message).toContain('Rejection reason is required');
+  });
+
+  it('PATCH /api/reports/:reportId/triage - Laporan tidak ditemukan harus 404', async () => {
+    const { db } = createTriageMockDb({ report: null });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/99999/triage', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: JSON.stringify({ action: 'approve', category: 'AC', priority: 'high' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(404);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('NOT_FOUND');
+    expect(body.message).toContain('Service request not found');
+  });
+
+  it('PATCH /api/reports/:reportId/triage - Laporan sudah berstatus diperiksa harus 409', async () => {
+    const { db } = createTriageMockDb({
+      report: { id: 101, status: 'diperiksa' }
+    });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/triage', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: JSON.stringify({ action: 'approve', category: 'AC', priority: 'high' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(409);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('CONFLICT');
+    expect(body.message).toContain('Cannot triage a report with status');
+  });
+
+  it('PATCH /api/reports/:reportId/triage - Non-Admin role harus 403', async () => {
+    const { db } = createTriageMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/triage', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'pelapor-1',
+        'x-actor-name': 'Fajar Ramadhan',
+        'x-actor-role': 'Pelapor'
+      },
+      body: JSON.stringify({ action: 'approve', category: 'AC', priority: 'high' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(403);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('FORBIDDEN');
+  });
+
+  it('PATCH /api/reports/:reportId/triage - Invalid JSON body harus 400', async () => {
+    const { db } = createTriageMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/triage', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: 'not-json'
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(400);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('BAD_REQUEST');
+    expect(body.message).toContain('Invalid JSON body');
+  });
+
+  it('PATCH /api/reports/:reportId/triage - Report ID non-numeric harus 400', async () => {
+    const { db } = createTriageMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/abc/triage', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: JSON.stringify({ action: 'approve', category: 'AC', priority: 'high' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(400);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('VALIDATION_ERROR');
+  });
+});
+
   it('GET /api/reports/:reportId - ID non-numeric harus 400', async () => {
     const { db } = createDetailMockDb();
     const env = { DB: db, ATTACHMENTS: mockR2 } as Env;

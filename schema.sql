@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS service_requests (
     status TEXT NOT NULL CHECK(status IN ('baru', 'diperiksa', 'ditolak', 'ditugaskan', 'diterima', 'sedang_dikerjakan', 'selesai_dikerjakan', 'ditutup', 'dibuka_kembali')),
     created_by TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    rejection_reason TEXT
 );
 
 -- 2. Tabel Komentar: service_request_comments

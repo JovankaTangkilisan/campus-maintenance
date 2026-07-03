@@ -46,6 +46,10 @@ export class Router {
     this.add('PUT', path, ...handlers);
   }
 
+  patch(path: string, ...handlers: RouteHandler[]) {
+    this.add('PATCH', path, ...handlers);
+  }
+
   delete(path: string, ...handlers: RouteHandler[]) {
     this.add('DELETE', path, ...handlers);
   }

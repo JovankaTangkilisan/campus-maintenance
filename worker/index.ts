@@ -357,7 +357,100 @@ router.get('/api/reports', mockAuth(), async (request, ctx) => {
   });
 });
 
-// 10. Rute Detail Laporan (GET /api/reports/:reportId) - Semua peran dengan scope berbeda
+// 10. Rute Triase Laporan (PATCH /api/reports/:reportId/triage) - Khusus Administrator
+router.patch('/api/reports/:reportId/triage', mockAuth(['Administrator']), async (request, ctx) => {
+  const actor = ctx.actor!;
+  const reportId = ctx.params.reportId;
+
+  if (!/^\d+$/.test(reportId)) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Report ID must be a positive integer.');
+  }
+
+  // 1. Ambil laporan dan validasi status
+  const report = await ctx.env.DB.prepare(
+    'SELECT id, status FROM service_requests WHERE id = ?'
+  ).bind(reportId).first<any>();
+
+  if (!report) {
+    throw new AppError(404, 'NOT_FOUND', 'Service request not found.');
+  }
+
+  if (report.status !== 'baru') {
+    throw new AppError(409, 'CONFLICT', `Cannot triage a report with status '${report.status}'. Only 'baru' reports can be triaged.`);
+  }
+
+  // 2. Parse body
+  let body: any;
+  try {
+    body = await request.json();
+  } catch (e) {
+    throw new AppError(400, 'BAD_REQUEST', 'Invalid JSON body.');
+  }
+
+  const { action, category, priority, rejection_reason } = body;
+
+  if (action === 'approve') {
+    if (!category || !category.trim()) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Category is required when approving a report.');
+    }
+    if (!priority || !REPORT_PRIORITIES.includes(priority)) {
+      throw new AppError(400, 'VALIDATION_ERROR', `Priority must be one of: ${REPORT_PRIORITIES.join(', ')}.`);
+    }
+
+    // Update: category, priority, status = 'diperiksa'
+    await ctx.env.DB.prepare(
+      `UPDATE service_requests SET category = ?, priority = ?, status = 'diperiksa', updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+    ).bind(category.trim(), priority, reportId).run();
+
+    // Catat riwayat
+    await ctx.env.DB.prepare(
+      `INSERT INTO service_request_status_history (service_request_id, old_status, new_status, actor_id, actor_role, notes) VALUES (?, 'baru', 'diperiksa', ?, ?, ?)`
+    ).bind(reportId, actor.id, actor.role, `Laporan diperiksa. Kategori: ${category.trim()}, Prioritas: ${priority}.`).run();
+
+  } else if (action === 'reject') {
+    if (!rejection_reason || !rejection_reason.trim()) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Rejection reason is required when rejecting a report.');
+    }
+
+    // Update: status = 'ditolak', rejection_reason
+    await ctx.env.DB.prepare(
+      `UPDATE service_requests SET status = 'ditolak', rejection_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+    ).bind(rejection_reason.trim(), reportId).run();
+
+    // Catat riwayat
+    await ctx.env.DB.prepare(
+      `INSERT INTO service_request_status_history (service_request_id, old_status, new_status, actor_id, actor_role, notes) VALUES (?, 'baru', 'ditolak', ?, ?, ?)`
+    ).bind(reportId, actor.id, actor.role, `Laporan ditolak. Alasan: ${rejection_reason.trim()}`).run();
+
+  } else {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Action must be either "approve" or "reject".');
+  }
+
+  // 3. Ambil data terkini setelah update
+  const updatedReport = await ctx.env.DB.prepare(
+    `SELECT id, title, description, location, category, priority, status, created_by, created_at, updated_at, rejection_reason FROM service_requests WHERE id = ?`
+  ).bind(reportId).first<any>();
+
+  return Response.json({
+    success: true,
+    report: {
+      id: updatedReport.id,
+      report_code: `CM-${updatedReport.id}`,
+      title: updatedReport.title,
+      description: updatedReport.description,
+      location: updatedReport.location,
+      category: updatedReport.category,
+      priority: updatedReport.priority,
+      status: updatedReport.status,
+      created_by: updatedReport.created_by,
+      created_at: updatedReport.created_at,
+      updated_at: updatedReport.updated_at,
+      rejection_reason: updatedReport.rejection_reason ?? null
+    }
+  });
+});
+
+// 11. Rute Detail Laporan (GET /api/reports/:reportId) - Semua peran dengan scope berbeda
 router.get('/api/reports/:reportId', mockAuth(), async (_request, ctx) => {
   const actor = ctx.actor!;
   const reportId = ctx.params.reportId;
