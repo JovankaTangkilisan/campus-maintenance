@@ -388,6 +388,108 @@ describe('POST /api/reports - Create Service Request Features', () => {
   });
 });
 
+function createDetailMockDb(options?: {
+  report?: any;
+  history?: any[];
+  comments?: any[];
+  attachments?: any[];
+  assignmentFound?: boolean;
+}) {
+  const queries: QueryLog[] = [];
+
+  const db = {
+    prepare: (sql: string) => {
+      let boundArgs: any[] = [];
+      const stmt = {
+        bind: (...args: any[]) => {
+          boundArgs = args;
+          return stmt;
+        },
+        run: async () => {
+          queries.push({ sql, args: boundArgs });
+          return { success: true, meta: { last_row_id: 999 } };
+        },
+        first: async () => {
+          queries.push({ sql, args: boundArgs });
+          // Main report query
+          if (sql.includes('FROM service_requests sr') && sql.includes('sr.id = ?')) {
+            if (options && 'report' in options && options.report === null) return null;
+            return options?.report ?? {
+              id: 101,
+              title: 'AC Mati di Lab Komputer',
+              description: 'AC tidak menyala sejak pagi.',
+              location: 'Gedung D, Lantai 2',
+              category: 'AC & Pendingin Ruangan',
+              priority: 'high',
+              status: 'baru',
+              created_by: 'pelapor-1',
+              created_at: '2026-07-03 09:00:00',
+              updated_at: '2026-07-03 09:00:00',
+              assigned_technician_id: 'teknisi-1'
+            };
+          }
+          // Assignment check for Teknisi
+          if (sql.includes('FROM service_request_assignments a') && sql.includes('a.service_request_id = ?')) {
+            return options?.assignmentFound !== false ? { 1: 1 } : null;
+          }
+          return null;
+        },
+        all: async () => {
+          queries.push({ sql, args: boundArgs });
+          if (sql.includes('service_request_status_history')) {
+            return {
+              success: true,
+              results: options?.history ?? [
+                {
+                  id: 1, service_request_id: 101,
+                  old_status: null, new_status: 'baru',
+                  actor_id: 'pelapor-1', actor_role: 'Pelapor',
+                  changed_at: '2026-07-03 09:00:00',
+                  notes: 'Laporan baru dibuat.'
+                }
+              ]
+            };
+          }
+          if (sql.includes('service_request_comments')) {
+            return {
+              success: true,
+              results: options?.comments ?? [
+                {
+                  id: 1, service_request_id: 101,
+                  comment: 'Mohon segera ditangani.',
+                  sender_id: 'pelapor-1',
+                  sender_name: 'Fajar Ramadhan',
+                  sender_role: 'Pelapor',
+                  created_at: '2026-07-03 09:05:00'
+                }
+              ]
+            };
+          }
+          if (sql.includes('service_request_attachments')) {
+            return {
+              success: true,
+              results: options?.attachments ?? [
+                {
+                  id: 1, service_request_id: 101,
+                  file_path: 'reports/101/photo.jpg',
+                  file_name: 'photo.jpg',
+                  file_type: 'image/jpeg',
+                  file_size: 204800,
+                  uploaded_at: '2026-07-03 09:02:00'
+                }
+              ]
+            };
+          }
+          return { success: true, results: [] };
+        }
+      };
+      return stmt;
+    }
+  } as unknown as D1Database;
+
+  return { db, queries };
+}
+
 describe('GET /api/reports - Role-aware list features', () => {
   it('GET /api/reports - Pelapor hanya melihat laporan miliknya melalui clause reporter_id/created_by', async () => {
     const { db, queries } = createListMockDb();
@@ -511,5 +613,183 @@ describe('GET /api/reports - Role-aware list features', () => {
     expect(selectQuery?.sql).not.toContain('sr.created_by = ?');
     expect(selectQuery?.sql).toContain('ORDER BY sr.created_at ASC, sr.id ASC');
     expect(selectQuery?.args[0]).toBe('teknisi-1');
+  });
+});
+
+describe('GET /api/reports/:reportId - Detail report features', () => {
+  it('GET /api/reports/:reportId - Pelapor melihat detail laporan miliknya harus 200 dan berisi semua data relasional', async () => {
+    const { db, queries } = createDetailMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101', {
+      method: 'GET',
+      headers: {
+        'x-actor-id': 'pelapor-1',
+        'x-actor-name': 'Fajar Ramadhan',
+        'x-actor-role': 'Pelapor'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.report.id).toBe(101);
+    expect(body.report.report_code).toBe('CM-101');
+    expect(body.report.created_by).toBe('pelapor-1');
+    expect(body.report.assigned_technician_id).toBe('teknisi-1');
+
+    // Verifikasi data relasional
+    expect(body.report.status_history).toBeInstanceOf(Array);
+    expect(body.report.status_history.length).toBeGreaterThan(0);
+    expect(body.report.status_history[0].new_status).toBe('baru');
+
+    expect(body.report.comments).toBeInstanceOf(Array);
+    expect(body.report.comments[0].comment).toContain('Mohon segera ditangani');
+    expect(body.report.comments[0].sender_name).toBe('Fajar Ramadhan');
+
+    expect(body.report.attachments).toBeInstanceOf(Array);
+    expect(body.report.attachments[0].file_name).toBe('photo.jpg');
+    expect(body.report.attachments[0].file_type).toBe('image/jpeg');
+
+    // Verifikasi query yang dijalankan
+    const reportQuery = queries.find(q => q.sql.includes('FROM service_requests sr') && q.sql.includes('WHERE sr.id = ?'));
+    expect(reportQuery).toBeDefined();
+    expect(reportQuery?.args[0]).toBe('101');
+  });
+
+  it('GET /api/reports/:reportId - Pelapor mencoba melihat laporan orang lain harus 403', async () => {
+    const { db } = createDetailMockDb({
+      report: {
+        id: 101, title: 'Test', description: 'Test', location: 'Gedung A',
+        category: 'AC', priority: 'low', status: 'baru',
+        created_by: 'pelapor-2', created_at: '2026-07-03 09:00:00', updated_at: '2026-07-03 09:00:00',
+        assigned_technician_id: null
+      }
+    });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101', {
+      method: 'GET',
+      headers: {
+        'x-actor-id': 'pelapor-1',
+        'x-actor-name': 'Fajar Ramadhan',
+        'x-actor-role': 'Pelapor'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(403);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('FORBIDDEN');
+    expect(body.message).toContain('Access denied');
+  });
+
+  it('GET /api/reports/:reportId - Admin dapat melihat laporan apa pun', async () => {
+    const { db } = createDetailMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101', {
+      method: 'GET',
+      headers: {
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.report.status_history).toBeInstanceOf(Array);
+    expect(body.report.comments).toBeInstanceOf(Array);
+    expect(body.report.attachments).toBeInstanceOf(Array);
+  });
+
+  it('GET /api/reports/:reportId - Teknisi dapat melihat laporan yang ditugaskan', async () => {
+    const { db } = createDetailMockDb({ assignmentFound: true });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101', {
+      method: 'GET',
+      headers: {
+        'x-actor-id': 'teknisi-1',
+        'x-actor-name': 'Budi Santoso',
+        'x-actor-role': 'Teknisi'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.report.assigned_technician_id).toBe('teknisi-1');
+  });
+
+  it('GET /api/reports/:reportId - Teknisi mencoba melihat laporan yang tidak ditugaskan harus 403', async () => {
+    const { db } = createDetailMockDb({ assignmentFound: false });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101', {
+      method: 'GET',
+      headers: {
+        'x-actor-id': 'teknisi-2',
+        'x-actor-name': 'Teknisi Lain',
+        'x-actor-role': 'Teknisi'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(403);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('FORBIDDEN');
+    expect(body.message).toContain('Access denied');
+  });
+
+  it('GET /api/reports/:reportId - ID laporan tidak ditemukan harus 404', async () => {
+    const { db } = createDetailMockDb({ report: null });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/99999', {
+      method: 'GET',
+      headers: {
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(404);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('NOT_FOUND');
+    expect(body.message).toContain('Service request not found');
+  });
+
+  it('GET /api/reports/:reportId - ID non-numeric harus 400', async () => {
+    const { db } = createDetailMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/abc', {
+      method: 'GET',
+      headers: {
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(400);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('VALIDATION_ERROR');
   });
 });

@@ -357,6 +357,129 @@ router.get('/api/reports', mockAuth(), async (request, ctx) => {
   });
 });
 
+// 10. Rute Detail Laporan (GET /api/reports/:reportId) - Semua peran dengan scope berbeda
+router.get('/api/reports/:reportId', mockAuth(), async (_request, ctx) => {
+  const actor = ctx.actor!;
+  const reportId = ctx.params.reportId;
+
+  if (!/^\d+$/.test(reportId)) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Report ID must be a positive integer.');
+  }
+
+  // 1. Ambil data laporan utama beserta assigned_technician_id
+  const report = await ctx.env.DB.prepare(
+    `
+      SELECT
+        sr.id,
+        sr.title,
+        sr.description,
+        sr.location,
+        sr.category,
+        sr.priority,
+        sr.status,
+        sr.created_by,
+        sr.created_at,
+        sr.updated_at,
+        (
+          SELECT a.technician_id
+          FROM service_request_assignments a
+          WHERE a.service_request_id = sr.id
+            AND a.status IN ('assigned', 'accepted', 'completed')
+          ORDER BY a.assigned_at DESC
+          LIMIT 1
+        ) AS assigned_technician_id
+      FROM service_requests sr
+      WHERE sr.id = ?
+    `
+  ).bind(reportId).first<any>();
+
+  if (!report) {
+    throw new AppError(404, 'NOT_FOUND', 'Service request not found.');
+  }
+
+  // 2. Otorisasi peran
+  if (actor.role === 'Pelapor' && report.created_by !== actor.id) {
+    throw new AppError(403, 'FORBIDDEN', 'Access denied. You can only view your own reports.');
+  }
+
+  if (actor.role === 'Teknisi') {
+    const assignment = await ctx.env.DB.prepare(
+      `SELECT 1 FROM service_request_assignments a
+       WHERE a.service_request_id = ? AND a.technician_id = ?
+         AND a.status IN ('assigned', 'accepted', 'completed')
+       LIMIT 1`
+    ).bind(reportId, actor.id).first<any>();
+
+    if (!assignment) {
+      throw new AppError(403, 'FORBIDDEN', 'Access denied. You are not assigned to this report.');
+    }
+  }
+
+  // 3. Ambil data relasional (status_history, comments, attachments)
+  const statusHistory = await ctx.env.DB.prepare(
+    `SELECT * FROM service_request_status_history
+     WHERE service_request_id = ?
+     ORDER BY changed_at ASC, id ASC`
+  ).bind(reportId).all<any>();
+
+  const comments = await ctx.env.DB.prepare(
+    `SELECT * FROM service_request_comments
+     WHERE service_request_id = ?
+     ORDER BY created_at ASC, id ASC`
+  ).bind(reportId).all<any>();
+
+  const attachments = await ctx.env.DB.prepare(
+    `SELECT * FROM service_request_attachments
+     WHERE service_request_id = ?`
+  ).bind(reportId).all<any>();
+
+  return Response.json({
+    success: true,
+    report: {
+      id: report.id,
+      report_code: `CM-${report.id}`,
+      title: report.title,
+      description: report.description,
+      location: report.location,
+      category: report.category,
+      priority: report.priority,
+      status: report.status,
+      created_by: report.created_by,
+      created_at: report.created_at,
+      updated_at: report.updated_at,
+      assigned_technician_id: report.assigned_technician_id ?? null,
+      status_history: statusHistory.results.map((h: any) => ({
+        id: h.id,
+        service_request_id: h.service_request_id,
+        old_status: h.old_status,
+        new_status: h.new_status,
+        actor_id: h.actor_id,
+        actor_role: h.actor_role,
+        changed_at: h.changed_at,
+        notes: h.notes
+      })),
+      comments: comments.results.map((c: any) => ({
+        id: c.id,
+        service_request_id: c.service_request_id,
+        comment: c.comment,
+        sender_id: c.sender_id,
+        sender_name: c.sender_name,
+        sender_role: c.sender_role,
+        created_at: c.created_at
+      })),
+      attachments: attachments.results.map((a: any) => ({
+        id: a.id,
+        service_request_id: a.service_request_id,
+        file_path: a.file_path,
+        file_name: a.file_name,
+        file_type: a.file_type,
+        file_size: a.file_size,
+        uploaded_at: a.uploaded_at
+      }))
+    }
+  });
+});
+
 // Export default worker handler
 export default {
   async fetch(request: Request, env: Env, executionCtx: ExecutionContext): Promise<Response> {

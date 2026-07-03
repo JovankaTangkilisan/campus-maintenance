@@ -310,6 +310,11 @@ export default function App() {
   const [listError, setListError] = useState('');
   const [listRefreshToken, setListRefreshToken] = useState(0);
   
+  // Detail state (from API)
+  const [detailReport, setDetailReport] = useState<Report | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
+  
   // Selection
   const [selectedReportId, setSelectedReportId] = useState<string>('CM-101');
   
@@ -349,10 +354,14 @@ export default function App() {
   const [assignTech, setAssignTech] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   
-  // Get currently selected report
+  // Get currently selected report (prefer API detail data, fallback to local mock)
   const selectedReport = useMemo(() => {
-    return reports.find(r => r.id === selectedReportId) || reports[0];
-  }, [reports, selectedReportId]);
+    if (detailReport) return detailReport;
+    if (reports.length > 0) {
+      return reports.find(r => r.id === selectedReportId) || reports[0];
+    }
+    return null;
+  }, [detailReport, reports, selectedReportId]);
 
   const activeSession = getSessionForRole(activeRole);
 
@@ -402,9 +411,7 @@ export default function App() {
         }
 
         const items = data.items || [];
-        const uiReports = items.map((item: any) => mapDbReportToUi(item, item.created_by === 'pelapor-1' ? 'Fajar Ramadhan (Asisten Lab)' : item.created_by));
-        
-        setReports(uiReports);
+
         setListReports(items.map(normalizeApiReport));
         setCurrentPage(data.page || currentPage);
         setTotalPages(data.total_pages || 1);
@@ -416,7 +423,6 @@ export default function App() {
 
         setListError(error.message || 'Gagal memuat daftar laporan.');
         setListReports([]);
-        setReports([]);
       } finally {
         if (!controller.signal.aborted) {
           setListLoading(false);
@@ -437,7 +443,66 @@ export default function App() {
     }
   }, [listReports, selectedReportId]);
 
-  // --- ACTIONS & MUTATIONS ---
+  // Detail fetch: when selectedReportId changes, load detail from API
+  useEffect(() => {
+    if (!selectedReportId) return;
+
+    const numericId = selectedReportId.replace(/^CM-/, '');
+    const controller = new AbortController();
+
+    const loadDetail = async () => {
+      setDetailLoading(true);
+      setDetailError('');
+      setDetailReport(null);
+
+      try {
+        const response = await fetch(`/api/reports/${numericId}`, {
+          method: 'GET',
+          signal: controller.signal,
+          headers: {
+            'x-actor-id': activeSession.actorId,
+            'x-actor-name': activeSession.actorName,
+            'x-actor-role': activeSession.actorRole
+          }
+        });
+
+        const data: any = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || 'Gagal memuat detail laporan.');
+        }
+
+        const report = data.report;
+        const authorName = report.created_by === 'pelapor-1'
+          ? 'Fajar Ramadhan (Asisten Lab)'
+          : report.created_by;
+        const uiReport = mapDbReportToUi(report, authorName);
+        setDetailReport(uiReport);
+        setDetailError('');
+      } catch (error: any) {
+        if (error.name === 'AbortError') return;
+        setDetailError(error.message || 'Gagal memuat detail laporan.');
+        setDetailReport(null);
+      } finally {
+        if (!controller.signal.aborted) {
+          setDetailLoading(false);
+        }
+      }
+    };
+
+    loadDetail();
+
+    return () => { controller.abort(); };
+  }, [selectedReportId, activeSession.actorId, activeSession.actorName, activeSession.actorRole]);
+
+  // --- MAPPING & HELPERS ---
+  const TECHNICIAN_ID_TO_NAME: Record<string, string> = {
+    'teknisi-1': 'Budi Santoso',
+    'teknisi-2': 'Andi Wijaya',
+    'teknisi-3': 'Joko Susilo',
+    'teknisi-4': 'Slamet Riyadi'
+  };
+
   const getCurrentTimestamp = () => {
     const d = new Date();
     const pad = (n: number) => n.toString().padStart(2, '0');
@@ -475,17 +540,35 @@ export default function App() {
       status: statusMap[dbReport.status] || 'Baru',
       reporter: authorName,
       reporterId: dbReport.created_by,
-      technician: '',
+      technician: dbReport.assigned_technician_id
+        ? (TECHNICIAN_ID_TO_NAME[dbReport.assigned_technician_id] || dbReport.assigned_technician_id)
+        : '',
       dateCreated: dbReport.created_at,
-      history: dbReport.history ? dbReport.history.map((h: any) => ({
-        status: statusMap[h.new_status] || h.new_status,
-        actor: h.actor_id === 'pelapor-1' ? 'Fajar Ramadhan (Asisten Lab)' : h.actor_id,
-        timestamp: h.changed_at,
-        notes: h.notes || ''
-      })) : [
-        { status: 'Baru', actor: authorName, timestamp: dbReport.created_at, notes: 'Laporan berhasil diajukan.' }
-      ],
-      comments: [],
+      history: dbReport.status_history
+        ? dbReport.status_history.map((h: any) => ({
+            status: statusMap[h.new_status] || h.new_status,
+            actor: h.actor_id === 'pelapor-1' ? 'Fajar Ramadhan (Asisten Lab)' : h.actor_id,
+            timestamp: h.changed_at,
+            notes: h.notes || ''
+          }))
+        : dbReport.history
+          ? dbReport.history.map((h: any) => ({
+              status: statusMap[h.new_status] || h.new_status,
+              actor: h.actor_id === 'pelapor-1' ? 'Fajar Ramadhan (Asisten Lab)' : h.actor_id,
+              timestamp: h.changed_at,
+              notes: h.notes || ''
+            }))
+          : [
+              { status: 'Baru', actor: authorName, timestamp: dbReport.created_at, notes: 'Laporan berhasil diajukan.' }
+            ],
+      comments: dbReport.comments
+        ? dbReport.comments.map((c: any) => ({
+            author: c.sender_name || c.author,
+            role: c.sender_role || c.role,
+            text: c.comment || c.text,
+            timestamp: c.created_at || c.timestamp
+          }))
+        : [],
       attachments: dbReport.attachments ? dbReport.attachments.map((att: any) => ({
         file_name: att.file_name,
         file_type: att.file_type,
@@ -1292,6 +1375,23 @@ export default function App() {
           {/* RIGHT VIEW: REPORT DETAILS */}
           <div className="detail-panel">
             
+            {detailLoading && !detailReport && (
+              <div className="empty-state" style={{ padding: '40px', textAlign: 'center' }}>
+                <span className="empty-icon"><Icons.Alert /></span>
+                <p>Memuat detail laporan...</p>
+              </div>
+            )}
+
+            {detailError && !detailReport && (
+              <div className="empty-state" style={{ padding: '40px', textAlign: 'center' }}>
+                <span className="empty-icon"><Icons.Alert /></span>
+                <p style={{ color: 'var(--color-accent)' }}>{detailError}</p>
+                <p style={{ fontSize: '0.75rem' }}>Menampilkan data lokal sebagai cadangan.</p>
+              </div>
+            )}
+
+            {selectedReport && (
+            <>
             {/* Header Detail */}
             <div className="detail-header">
               <div className="detail-title-row">
@@ -1687,6 +1787,9 @@ export default function App() {
                 </form>
               </div>
             )}
+
+            </>
+          )}
 
           </div>
 
