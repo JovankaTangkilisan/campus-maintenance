@@ -630,7 +630,77 @@ router.post('/api/reports/:reportId/assignment/reject', mockAuth(['Teknisi']), a
   return Response.json({ success: true, message: 'Tugas ditolak.' });
 });
 
-// 16. Rute Detail Laporan (GET /api/reports/:reportId) - Semua peran dengan scope berbeda
+// 17. Rute Mulai Pengerjaan (POST /api/reports/:reportId/progress/start)
+router.post('/api/reports/:reportId/progress/start', mockAuth(['Teknisi']), async (_request, ctx) => {
+  const actor = ctx.actor!;
+  const reportId = ctx.params.reportId;
+
+  if (!/^\d+$/.test(reportId)) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Report ID must be a positive integer.');
+  }
+
+  // Validasi: teknisi assigned, status = 'diterima'
+  const assignment = await ctx.env.DB.prepare(
+    `SELECT a.id FROM service_request_assignments a
+     JOIN service_requests sr ON sr.id = a.service_request_id
+     WHERE a.service_request_id = ? AND a.technician_id = ? AND a.is_active = 1 AND a.status = 'accepted'
+       AND sr.status = 'diterima'
+     LIMIT 1`
+  ).bind(reportId, actor.id).first<any>();
+
+  if (!assignment) {
+    throw new AppError(403, 'FORBIDDEN', 'Access denied. You are not assigned to this report or the report is not in "diterima" status.');
+  }
+
+  // Update report: status = 'sedang_dikerjakan', started_at = now
+  await ctx.env.DB.prepare(
+    `UPDATE service_requests SET status = 'sedang_dikerjakan', started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+  ).bind(reportId).run();
+
+  // Catat riwayat
+  await ctx.env.DB.prepare(
+    `INSERT INTO service_request_status_history (service_request_id, old_status, new_status, actor_id, actor_role, notes) VALUES (?, 'diterima', 'sedang_dikerjakan', ?, ?, 'Pekerjaan mulai dikerjakan di lokasi.')`
+  ).bind(reportId, actor.id, actor.role).run();
+
+  return Response.json({ success: true, message: 'Pekerjaan mulai dikerjakan.' });
+});
+
+// 18. Rute Selesaikan Pengerjaan (POST /api/reports/:reportId/progress/complete)
+router.post('/api/reports/:reportId/progress/complete', mockAuth(['Teknisi']), async (_request, ctx) => {
+  const actor = ctx.actor!;
+  const reportId = ctx.params.reportId;
+
+  if (!/^\d+$/.test(reportId)) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Report ID must be a positive integer.');
+  }
+
+  // Validasi: teknisi assigned, status = 'sedang_dikerjakan'
+  const assignment = await ctx.env.DB.prepare(
+    `SELECT a.id FROM service_request_assignments a
+     JOIN service_requests sr ON sr.id = a.service_request_id
+     WHERE a.service_request_id = ? AND a.technician_id = ? AND a.is_active = 1 AND a.status = 'accepted'
+       AND sr.status = 'sedang_dikerjakan'
+     LIMIT 1`
+  ).bind(reportId, actor.id).first<any>();
+
+  if (!assignment) {
+    throw new AppError(403, 'FORBIDDEN', 'Access denied. You are not assigned to this report or the report is not in "sedang_dikerjakan" status.');
+  }
+
+  // Update report: status = 'selesai_dikerjakan', completed_at = now
+  await ctx.env.DB.prepare(
+    `UPDATE service_requests SET status = 'selesai_dikerjakan', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+  ).bind(reportId).run();
+
+  // Catat riwayat
+  await ctx.env.DB.prepare(
+    `INSERT INTO service_request_status_history (service_request_id, old_status, new_status, actor_id, actor_role, notes) VALUES (?, 'sedang_dikerjakan', 'selesai_dikerjakan', ?, ?, 'Pekerjaan selesai. Mengirim konfirmasi ke pelapor.')`
+  ).bind(reportId, actor.id, actor.role).run();
+
+  return Response.json({ success: true, message: 'Pekerjaan selesai.' });
+});
+
+// 19. Rute Detail Laporan (GET /api/reports/:reportId) - Semua peran dengan scope berbeda
 router.get('/api/reports/:reportId', mockAuth(), async (_request, ctx) => {
   const actor = ctx.actor!;
   const reportId = ctx.params.reportId;

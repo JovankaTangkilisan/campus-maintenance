@@ -851,20 +851,22 @@ export default function App() {
       return;
     }
 
-    // Sedang Dikerjakan / Selesai Dikerjakan — tetap lokal (future API)
-    const timestamp = getCurrentTimestamp();
-    const actorName = selectedTechnicianName;
-    setReports(prev => prev.map(r => {
-      if (r.id !== selectedReportId) return r;
-      let note = '';
-      if (nextStatus === 'Sedang Dikerjakan') note = 'Pekerjaan mulai dikerjakan di lokasi.';
-      else if (nextStatus === 'Selesai Dikerjakan') note = 'Pekerjaan selesai. Mengirim konfirmasi ke pelapor.';
-      return {
-        ...r,
-        status: nextStatus,
-        history: [...r.history, { status: nextStatus, actor: actorName, timestamp, notes: note }]
-      };
-    }));
+    // Sedang Dikerjakan / Selesai Dikerjakan via API
+    const endpoint = nextStatus === 'Sedang Dikerjakan' ? 'start' : 'complete';
+    const oldStatus = nextStatus === 'Sedang Dikerjakan' ? 'diterima' : 'sedang_dikerjakan';
+    try {
+      const res = await fetch(`/api/reports/${reportId}/progress/${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'x-actor-id': session.actorId,
+          'x-actor-name': session.actorName,
+          'x-actor-role': session.actorRole
+        }
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(`Gagal: ${data.message}`); return; }
+      setListRefreshToken(t => t + 1);
+    } catch (err: any) { alert(`Gagal terhubung ke server: ${err.message}`); }
   };
     }));
     

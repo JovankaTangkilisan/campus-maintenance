@@ -1362,6 +1362,141 @@ describe('POST /api/reports/:reportId/assignment/reject - Reject assignment', ()
   });
 });
 
+function createProgressMockDb(options?: {
+  assignment?: any;
+}) {
+  const queries: QueryLog[] = [];
+
+  const db = {
+    prepare: (sql: string) => {
+      let boundArgs: any[] = [];
+      const stmt = {
+        bind: (...args: any[]) => {
+          boundArgs = args;
+          return stmt;
+        },
+        run: async () => {
+          queries.push({ sql, args: boundArgs });
+          return { success: true, meta: { last_row_id: 777 } };
+        },
+        first: async () => {
+          queries.push({ sql, args: boundArgs });
+          if (sql.includes('FROM service_request_assignments a') && sql.includes('JOIN service_requests sr')) {
+            if (options && 'assignment' in options) return options.assignment;
+            return { id: 555 };
+          }
+          return null;
+        },
+        all: async () => {
+          queries.push({ sql, args: boundArgs });
+          return { success: true, results: [] };
+        }
+      };
+      return stmt;
+    }
+  } as unknown as D1Database;
+
+  return { db, queries };
+}
+
+describe('POST /api/reports/:reportId/progress/start - Start work', () => {
+  it('Teknisi mulai pengerjaan laporan diterima harus 200', async () => {
+    const { db, queries } = createProgressMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/progress/start', {
+      method: 'POST',
+      headers: {
+        'x-actor-id': 'teknisi-1',
+        'x-actor-name': 'Budi Santoso',
+        'x-actor-role': 'Teknisi'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+
+    const reportUpdateQueries = queries.filter(q =>
+      q.sql.includes("status = 'sedang_dikerjakan'")
+    );
+    expect(reportUpdateQueries.length).toBe(1);
+    expect(reportUpdateQueries[0].sql).toContain('started_at');
+
+    const historyQueries = queries.filter(q => q.sql.includes('INSERT INTO service_request_status_history'));
+    expect(historyQueries.length).toBe(1);
+    expect(historyQueries[0].sql).toContain('sedang_dikerjakan');
+  });
+
+  it('Teknisi tidak ditugaskan harus 403', async () => {
+    const { db } = createProgressMockDb({ assignment: null });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/progress/start', {
+      method: 'POST',
+      headers: {
+        'x-actor-id': 'teknisi-2',
+        'x-actor-name': 'Andi Wijaya',
+        'x-actor-role': 'Teknisi'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(403);
+  });
+});
+
+describe('POST /api/reports/:reportId/progress/complete - Complete work', () => {
+  it('Teknisi selesaikan pengerjaan laporan sedang_dikerjakan harus 200', async () => {
+    const { db, queries } = createProgressMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/progress/complete', {
+      method: 'POST',
+      headers: {
+        'x-actor-id': 'teknisi-1',
+        'x-actor-name': 'Budi Santoso',
+        'x-actor-role': 'Teknisi'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+
+    const reportUpdateQueries = queries.filter(q =>
+      q.sql.includes("status = 'selesai_dikerjakan'")
+    );
+    expect(reportUpdateQueries.length).toBe(1);
+    expect(reportUpdateQueries[0].sql).toContain('completed_at');
+
+    const historyQueries = queries.filter(q => q.sql.includes('INSERT INTO service_request_status_history'));
+    expect(historyQueries.length).toBe(1);
+    expect(historyQueries[0].sql).toContain('selesai_dikerjakan');
+  });
+
+  it('Teknisi tidak ditugaskan harus 403', async () => {
+    const { db } = createProgressMockDb({ assignment: null });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/progress/complete', {
+      method: 'POST',
+      headers: {
+        'x-actor-id': 'teknisi-2',
+        'x-actor-name': 'Andi Wijaya',
+        'x-actor-role': 'Teknisi'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(403);
+  });
+});
+
 function createAssignMockDb(options?: {
   report?: any;
   updatedReport?: any;
