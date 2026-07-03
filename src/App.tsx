@@ -873,45 +873,65 @@ export default function App() {
     setRejectReason('');
   };
 
-  // UC-09: Menambahkan Komentar
-  const handleAddComment = (e: React.FormEvent) => {
+  // UC-09: Menambahkan Komentar (via API)
+  const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!commentInput.trim()) return;
-    
-    const timestamp = getCurrentTimestamp();
-    let author = 'Anonim';
-    let role = 'User';
-    
-    if (activeRole === 'pelapor') {
-      author = 'Fajar Ramadhan (Asisten Lab)';
-      role = 'Pelapor';
-    } else if (activeRole === 'admin') {
-      author = 'Administrator';
-      role = 'Admin';
-    } else if (activeRole === 'teknisi') {
-      author = selectedTechnicianName;
-      role = 'Teknisi';
-    } else if (activeRole === 'manajer') {
-      author = 'Facility Manager';
-      role = 'Manajer';
-    }
+    if (!commentInput.trim() || !selectedReportId || !activeRole) return;
 
-    const newComment: CommentEntry = {
-      author,
-      role,
-      text: commentInput,
-      timestamp
-    };
+    try {
+      const response = await fetch(`/api/reports/${selectedReportId}/comments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getSessionForRole(activeRole)
+        },
+        body: JSON.stringify({ comment: commentInput.trim() })
+      });
 
-    setReports(prev => prev.map(r => {
-      if (r.id !== selectedReportId) return r;
-      return {
-        ...r,
-        comments: [...r.comments, newComment]
+      if (!response.ok) {
+        const err = await response.json();
+        console.error('Gagal mengirim komentar:', err.message);
+        return;
+      }
+
+      const data = await response.json();
+      const c = data.comment;
+
+      const newComment: CommentEntry = {
+        author: c.sender_name,
+        role: c.sender_role,
+        text: c.comment,
+        timestamp: c.created_at
       };
-    }));
 
-    setCommentInput('');
+      setReports(prev => prev.map(r => {
+        if (r.id !== selectedReportId) return r;
+        return { ...r, comments: [...r.comments, newComment] };
+      }));
+
+      if (detailReport && detailReport.report?.id === selectedReportId) {
+        setDetailReport(prev => {
+          if (!prev || !prev.report) return prev;
+          return {
+            ...prev,
+            report: {
+              ...prev.report,
+              comments: [...(prev.report.comments || []), {
+                ...c,
+                sender_name: c.sender_name,
+                sender_role: c.sender_role,
+                comment: c.comment,
+                created_at: c.created_at
+              }]
+            }
+          };
+        });
+      }
+
+      setCommentInput('');
+    } catch (err) {
+      console.error('Gagal menghubungi server:', err);
+    }
   };
 
   // UC-11: Konfirmasi Pelapor & Penutupan/Pembukaan Kembali (Admin)

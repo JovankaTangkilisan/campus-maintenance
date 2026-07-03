@@ -1917,6 +1917,275 @@ describe('POST /api/reports/:reportId/assign - Assign technician', () => {
   });
 });
 
+function createCommentsMockDb(options?: {
+  report?: any;
+  technicianAssigned?: boolean;
+  createdComment?: any;
+}) {
+  const queries: QueryLog[] = [];
+  let runStep = 0;
+
+  const db = {
+    prepare: (sql: string) => {
+      let boundArgs: any[] = [];
+      const stmt = {
+        bind: (...args: any[]) => {
+          boundArgs = args;
+          return stmt;
+        },
+        run: async () => {
+          queries.push({ sql, args: boundArgs });
+          runStep++;
+          return { success: true, meta: { last_row_id: 777 } };
+        },
+        first: async () => {
+          queries.push({ sql, args: boundArgs });
+          if (sql.includes('SELECT id, created_by FROM service_requests')) {
+            if (options && 'report' in options) return options.report;
+            return { id: 101, created_by: 'pelapor-1' };
+          }
+          if (sql.includes('SELECT 1 FROM service_request_assignments a')) {
+            return options?.technicianAssigned !== false ? { 1: 1 } : null;
+          }
+          if (sql.includes('SELECT * FROM service_request_comments WHERE id = ?')) {
+            return options?.createdComment ?? {
+              id: 777,
+              service_request_id: 101,
+              comment: 'Test komentar dari API.',
+              sender_id: 'pelapor-1',
+              sender_name: 'Fajar Ramadhan',
+              sender_role: 'Pelapor',
+              created_at: '2026-07-03 21:00:00'
+            };
+          }
+          return null;
+        },
+        all: async () => {
+          queries.push({ sql, args: boundArgs });
+          return { success: true, results: [] };
+        }
+      };
+      return stmt;
+    }
+  } as unknown as D1Database;
+
+  return { db, queries };
+}
+
+describe('POST /api/reports/:reportId/comments - Add comment', () => {
+  it('Pelapor mengirim komentar valid harus 201', async () => {
+    const { db, queries } = createCommentsMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/comments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'pelapor-1',
+        'x-actor-name': 'Fajar Ramadhan',
+        'x-actor-role': 'Pelapor'
+      },
+      body: JSON.stringify({ comment: 'Test komentar dari API.' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(201);
+
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.comment.comment).toBe('Test komentar dari API.');
+    expect(body.comment.sender_name).toBe('Fajar Ramadhan');
+    expect(body.comment.sender_role).toBe('Pelapor');
+
+    const insertQuery = queries.find(q => q.sql.includes('INSERT INTO service_request_comments'));
+    expect(insertQuery).toBeDefined();
+    expect(insertQuery?.args[1]).toBe('Test komentar dari API.');
+    expect(insertQuery?.args[2]).toBe('pelapor-1');
+  });
+
+  it('Admin mengirim komentar valid harus 201', async () => {
+    const { db } = createCommentsMockDb({
+      createdComment: {
+        id: 778, service_request_id: 101,
+        comment: 'Siap ditangani.',
+        sender_id: 'admin-1',
+        sender_name: 'Administrator',
+        sender_role: 'Administrator',
+        created_at: '2026-07-03 21:01:00'
+      }
+    });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/comments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: JSON.stringify({ comment: 'Siap ditangani.' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(201);
+
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.comment.sender_role).toBe('Administrator');
+  });
+
+  it('Teknisi terassign mengirim komentar valid harus 201', async () => {
+    const { db } = createCommentsMockDb({
+      createdComment: {
+        id: 779, service_request_id: 101,
+        comment: 'Lokasi sudah dicek.',
+        sender_id: 'teknisi-1',
+        sender_name: 'Budi Santoso',
+        sender_role: 'Teknisi',
+        created_at: '2026-07-03 21:02:00'
+      }
+    });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/comments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'teknisi-1',
+        'x-actor-name': 'Budi Santoso',
+        'x-actor-role': 'Teknisi'
+      },
+      body: JSON.stringify({ comment: 'Lokasi sudah dicek.' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(201);
+
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.comment.sender_name).toBe('Budi Santoso');
+    expect(body.comment.sender_role).toBe('Teknisi');
+  });
+
+  it('Komentar kosong harus 400', async () => {
+    const { db } = createCommentsMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/comments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'pelapor-1',
+        'x-actor-name': 'Fajar Ramadhan',
+        'x-actor-role': 'Pelapor'
+      },
+      body: JSON.stringify({ comment: '' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(400);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('VALIDATION_ERROR');
+    expect(body.message).toContain('Comment text is required');
+  });
+
+  it('Pelapor bukan pemilik harus 403', async () => {
+    const { db } = createCommentsMockDb({
+      report: { id: 101, created_by: 'pelapor-2' }
+    });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/comments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'pelapor-1',
+        'x-actor-name': 'Fajar Ramadhan',
+        'x-actor-role': 'Pelapor'
+      },
+      body: JSON.stringify({ comment: 'Test.' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(403);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('FORBIDDEN');
+    expect(body.message).toContain('Access denied');
+  });
+
+  it('Teknisi tidak terassign harus 403', async () => {
+    const { db } = createCommentsMockDb({
+      technicianAssigned: false
+    });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/comments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'teknisi-2',
+        'x-actor-name': 'Teknisi Lain',
+        'x-actor-role': 'Teknisi'
+      },
+      body: JSON.stringify({ comment: 'Test.' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(403);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('FORBIDDEN');
+    expect(body.message).toContain('Access denied');
+  });
+
+  it('ID non-numeric harus 400', async () => {
+    const { db } = createCommentsMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/abc/comments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: JSON.stringify({ comment: 'Test.' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(400);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('VALIDATION_ERROR');
+  });
+
+  it('Laporan tidak ditemukan harus 404', async () => {
+    const { db } = createCommentsMockDb({ report: null });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/99999/comments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: JSON.stringify({ comment: 'Test.' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(404);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('NOT_FOUND');
+  });
+});
+
   it('GET /api/reports/:reportId - ID non-numeric harus 400', async () => {
     const { db } = createDetailMockDb();
     const env = { DB: db, ATTACHMENTS: mockR2 } as Env;

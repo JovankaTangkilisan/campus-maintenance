@@ -769,7 +769,76 @@ router.post('/api/reports/:reportId/reopen', mockAuth(['Administrator']), async 
   return Response.json({ success: true, message: 'Laporan dibuka kembali.' });
 });
 
-// 22. Rute Detail Laporan (GET /api/reports/:reportId) - Semua peran dengan scope berbeda
+// 22. Rute Tambah Komentar (POST /api/reports/:reportId/comments) - Semua peran dengan akses laporan
+router.post('/api/reports/:reportId/comments', mockAuth(), async (request, ctx) => {
+  const actor = ctx.actor!;
+  const reportId = ctx.params.reportId;
+
+  if (!/^\d+$/.test(reportId)) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Report ID must be a positive integer.');
+  }
+
+  let body: any;
+  try {
+    body = await request.json();
+  } catch (e) {
+    throw new AppError(400, 'BAD_REQUEST', 'Invalid JSON body.');
+  }
+
+  const { comment } = body;
+
+  if (!comment || !comment.trim()) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Comment text is required and cannot be empty.');
+  }
+
+  // Validasi akses ke laporan
+  const report = await ctx.env.DB.prepare(
+    'SELECT id, created_by FROM service_requests WHERE id = ?'
+  ).bind(reportId).first<any>();
+
+  if (!report) {
+    throw new AppError(404, 'NOT_FOUND', 'Service request not found.');
+  }
+
+  if (actor.role === 'Pelapor' && report.created_by !== actor.id) {
+    throw new AppError(403, 'FORBIDDEN', 'Access denied. You can only comment on your own reports.');
+  }
+
+  if (actor.role === 'Teknisi') {
+    const assignment = await ctx.env.DB.prepare(
+      `SELECT 1 FROM service_request_assignments a
+       WHERE a.service_request_id = ? AND a.technician_id = ?
+         AND a.status IN ('assigned', 'accepted', 'completed')
+       LIMIT 1`
+    ).bind(reportId, actor.id).first<any>();
+
+    if (!assignment) {
+      throw new AppError(403, 'FORBIDDEN', 'Access denied. You are not assigned to this report.');
+    }
+  }
+
+  const commentText = comment.trim();
+
+  const insertResult = await ctx.env.DB.prepare(
+    'INSERT INTO service_request_comments (service_request_id, comment, sender_id, sender_name, sender_role) VALUES (?, ?, ?, ?, ?)'
+  ).bind(reportId, commentText, actor.id, actor.name, actor.role).run();
+
+  const commentId = insertResult.meta.last_row_id;
+
+  const createdComment = await ctx.env.DB.prepare(
+    'SELECT * FROM service_request_comments WHERE id = ?'
+  ).bind(commentId).first<any>();
+
+  return Response.json({
+    success: true,
+    comment: createdComment
+  }, {
+    status: 201,
+    headers: { 'Content-Type': 'application/json' }
+  });
+});
+
+// 23. Rute Detail Laporan (GET /api/reports/:reportId) - Semua peran dengan scope berbeda
 router.get('/api/reports/:reportId', mockAuth(), async (_request, ctx) => {
   const actor = ctx.actor!;
   const reportId = ctx.params.reportId;
