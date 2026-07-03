@@ -1,339 +1,342 @@
 ---
 name: 07-database-api-design
-description: Panduan untuk merancang, mendokumentasikan, meninjau, dan memvalidasi database serta API perangkat lunak. Gunakan ketika Codex perlu membuat struktur penyimpanan data yang konsisten, efisien, aman, dan terintegrasi; merancang kontrak komunikasi antara frontend, backend, database, dan sistem eksternal; atau menyusun entity, relationship, constraint, index, endpoint, payload, autentikasi, error handling, versioning, dan traceability dari requirement proyek.
+description: Merancang database schema dan API contract untuk proyek Campus Service Request and Maintenance System berdasarkan requirement dan architecture design yang sudah disetujui. Gunakan skill ini saat perlu menentukan tabel, kolom, relasi, constraint, endpoint, method HTTP, payload, response, error case, akses role, dan traceability sebelum implementasi atau issue planning.
 ---
 
-# 07 Database dan API Design
+# Campus Service Request and Maintenance System - Database and API Design
 
-## Purpose
-Gunakan skill ini untuk menghasilkan desain database dan API yang konsisten, efisien, aman, dapat diuji, dapat ditelusuri, dan siap menjadi acuan implementasi.
+## Tujuan
+Skill ini membantu menerjemahkan requirement dan architecture design menjadi rancangan teknis database dan API untuk aplikasi Campus Service Request and Maintenance System.
 
-Skill ini menyelesaikan masalah struktur data yang tidak jelas, duplikasi atau inkonsistensi data, relasi dan constraint yang tidak lengkap, API yang ambigu, komunikasi antarsistem yang rapuh, serta kontrak data yang tidak terhubung dengan requirement bisnis.
+Hasil skill ini harus menjawab dua pertanyaan utama:
+- Data apa saja yang perlu disimpan agar proses service request dan maintenance berjalan benar?
+- Endpoint API apa saja yang dibutuhkan frontend agar setiap aktor dapat menjalankan tugasnya?
 
-## When to Use
-Gunakan skill ini ketika pengguna meminta bantuan untuk:
+Skill ini menjadi penghubung antara requirement, architecture design, UI design, issue planning, dan implementation. Output harus cukup detail untuk dipakai developer, tetapi belum berupa kode program.
 
-- Merancang database relasional, dokumen, key-value, graph, time-series, atau penyimpanan lain.
-- Membuat conceptual, logical, atau physical data model.
-- Menentukan entity, atribut, relasi, constraint, index, partisi, dan retensi data.
-- Merancang REST, GraphQL, RPC, webhook, event, atau message contract.
-- Mendefinisikan komunikasi frontend, backend, database, dan sistem eksternal.
-- Membuat API contract, request/response schema, status code, error format, pagination, filtering, dan versioning.
-- Meninjau desain untuk integritas, performa, keamanan, privasi, reliability, dan scalability.
-- Membuat traceability antara requirement, model data, endpoint, integrasi, dan acceptance criteria.
+## Kapan Digunakan
+Gunakan skill ini setelah:
+- Requirement functional dan non-functional sudah tersedia.
+- User story dan acceptance criteria sudah cukup jelas.
+- Architecture design sudah menentukan komponen utama sistem.
+- Alur status service request sudah disetujui.
 
-Jangan gunakan skill ini untuk mengubah database produksi, menjalankan migrasi, atau menerbitkan API tanpa persetujuan dan prosedur operasional yang sesuai.
+Gunakan juga ketika:
+- Ada requirement baru yang menambah data, role, status, atau workflow.
+- Ada perubahan arsitektur yang memengaruhi database atau API.
+- Tim perlu membuat kontrak API sebelum frontend dan backend dikerjakan paralel.
+- Reviewer meminta bukti bahwa tabel dan endpoint dapat ditelusuri ke requirement.
 
-## Inputs
-Informasi berikut harus tersedia sebelum skill dijalankan:
+Jangan gunakan skill ini untuk menulis kode backend, migration final, seed data final, atau implementasi UI. Skill ini hanya menghasilkan desain database dan kontrak API.
 
-- Nama sistem, modul, atau fitur.
-- Tujuan bisnis dan ruang lingkup.
-- Functional requirements, non-functional requirements, business rules, user stories, dan acceptance criteria.
-- Aktor, peran, permission, dan skenario penggunaan.
-- Data yang dibuat, dibaca, diubah, dihapus, dicari, atau dipertukarkan.
-- Sumber data, pemilik data, klasifikasi sensitivitas, dan aturan retensi.
-- Volume data, pola akses, beban, latency, throughput, availability, dan recovery target jika tersedia.
-- Arsitektur sistem, platform, teknologi, dan batasan yang sudah dipilih.
-- Sistem eksternal, protokol, autentikasi, dan kontrak integrasi yang sudah ada.
-- Kebutuhan audit, keamanan, privasi, compliance, lokalisasi, dan time zone.
-- Skema database, API specification, atau kode yang sudah ada jika desain merupakan perubahan.
+## Input
+Informasi berikut harus tersedia:
+- Functional requirements dengan ID, misalnya `FR-01`, `FR-02`.
+- Non-functional requirements dengan ID, misalnya `NFR-01`.
+- Business rules dengan ID, misalnya `BR-01`.
+- User stories dan acceptance criteria.
+- Architecture design sistem.
+- Daftar aktor dan hak akses, misalnya Requester, Administrator, Technician, dan Facility Manager.
+- Alur status service request, misalnya Submitted, Under Review, Assigned, In Progress, Resolved, Closed, Rejected, atau Cancelled.
+- Batasan teknologi database dan backend jika ada.
+- Fitur opsional yang sudah disetujui, misalnya upload foto, komentar, notifikasi, dashboard, export report, atau audit log.
 
-Jika input penting tidak tersedia, minta klarifikasi sebelum memfinalkan desain.
+Jika input belum lengkap, lanjutkan hanya untuk bagian yang aman dan tandai gap sebagai pertanyaan terbuka.
 
 ## Required Context
-Baca konteks proyek yang relevan sebelum membuat desain:
+Baca konteks berikut sebelum membuat desain:
+- Dokumen requirement yang memuat fitur pembuatan request, review request, assignment teknisi, update progress, penyelesaian, dan penutupan request.
+- Dokumen architecture design yang menjelaskan komponen frontend, backend/API, database, autentikasi, dan integrasi.
+- Dokumen UI design jika sudah ada, terutama form input dan data yang harus tampil di halaman.
+- Dokumen role access atau permission matrix jika tersedia.
+- Dokumen issue planning jika desain sedang diperbarui dari backlog yang sudah ada.
+- Struktur repository jika proyek sudah berjalan.
+- Konvensi naming table, endpoint, response, atau status code jika sudah ada.
 
-- Dokumen elicitation, specification, prioritization, dan architecture.
-- Business rules, workflow, state transition, dan domain glossary.
-- Existing schema, migration, seed, query, ORM model, dan data dictionary.
-- Existing API contract, OpenAPI, GraphQL schema, event schema, SDK, dan integration guide.
-- Kode frontend dan backend yang mengonsumsi atau menghasilkan data.
-- Diagram sistem, network boundary, deployment topology, dan dependency eksternal.
-- Security, privacy, compliance, backup, disaster recovery, dan retention policy.
-- Monitoring, incident, performance test, analytics, dan pola penggunaan aktual jika tersedia.
+Jangan membuat asumsi tersembunyi tentang kolom, endpoint, role, atau provider layanan. Semua asumsi harus ditulis eksplisit.
 
-Gunakan fakta yang tersedia. Tandai inferensi sebagai asumsi dan jangan mengarang kapasitas, SLA, field, business rule, atau kontrak sistem eksternal.
+## Langkah Kerja
+1. Baca requirement, user story, acceptance criteria, business rules, dan architecture design.
+2. Buat daftar konsep data utama dari domain kampus, seperti service request, user, role, facility, location, category, assignment, status history, comment, attachment, dan notification jika didukung requirement.
+3. Tentukan entity kandidat dari konsep data tersebut. Jangan menjadikan semua konsep sebagai tabel jika tidak diperlukan.
+4. Untuk setiap entity, tentukan tujuan penyimpanan, requirement sumber, dan data minimal yang harus disimpan.
+5. Rancang tabel dengan kolom, tipe data, primary key, foreign key, unique constraint, nullable rule, default value, dan catatan validasi.
+6. Tentukan relasi antar tabel, termasuk one-to-many atau many-to-many jika requirement mendukungnya.
+7. Pastikan alur status service request dapat direpresentasikan dalam database, minimal melalui status aktif dan riwayat perubahan status jika dibutuhkan.
+8. Tentukan endpoint API berdasarkan aksi pengguna dan acceptance criteria, bukan berdasarkan tabel semata.
+9. Untuk setiap endpoint, tulis method, path, aktor yang boleh mengakses, request payload, response sukses, error cases, dan requirement traceability.
+10. Petakan business rules ke database constraint, validasi API, atau keduanya.
+11. Petakan non-functional requirements ke keputusan desain, misalnya pagination, authorization, audit trail, input validation, response error, dan perlindungan data sensitif.
+12. Periksa konsistensi nama antara requirement, tabel, kolom, endpoint, dan response.
+13. Buat traceability matrix yang menghubungkan requirement ke tabel dan endpoint.
+14. Catat asumsi, risiko, dan pertanyaan terbuka.
+15. Lakukan quality check.
+16. Hentikan jika informasi penting tidak cukup untuk membuat desain yang dapat divalidasi.
 
-## Workflow
-1. Tetapkan tujuan dan batas desain.
-   - Identifikasi business goal, use case, aktor, data, sistem terlibat, dan scope.
-   - Catat constraint, assumption, keputusan yang sudah final, dan pertanyaan terbuka.
-
-2. Petakan aliran dan kepemilikan data.
-   - Identifikasi producer, consumer, system of record, data owner, klasifikasi, dan lifecycle.
-   - Gambarkan aliran frontend-backend-database-sistem eksternal.
-   - Gunakan ID `DF-001`, `DF-002`, dan seterusnya.
-
-3. Pilih pola penyimpanan.
-   - Evaluasi kebutuhan consistency, transaction, query, scale, latency, availability, dan operasional.
-   - Dokumentasikan alasan pemilihan jenis database atau pola polyglot persistence.
-   - Jangan memilih teknologi hanya berdasarkan preferensi tanpa kebutuhan yang mendukung.
-
-4. Susun model data.
-   - Buat entity dengan ID `ENT-001`, atribut `FLD-001`, dan relationship `REL-001`.
-   - Tentukan primary key, foreign key, cardinality, nullability, uniqueness, default, validation, dan referential action.
-   - Normalisasi untuk konsistensi; denormalisasi hanya dengan alasan dan strategi sinkronisasi yang jelas.
-   - Dokumentasikan enum, status transition, audit field, soft delete, history, dan temporal data jika relevan.
-
-5. Rancang performa dan lifecycle data.
-   - Definisikan index berdasarkan query nyata, bukan semua field.
-   - Dokumentasikan pagination, partitioning, archival, retention, backup, restore, migration, dan growth strategy.
-   - Gunakan metrik terukur untuk latency, throughput, volume, RPO, dan RTO jika telah diberikan.
-
-6. Rancang API dan kontrak komunikasi.
-   - Pilih style API berdasarkan pola interaksi dan constraint.
-   - Gunakan ID `API-001` untuk operation dan `EVT-001` untuk event.
-   - Definisikan method/operation, path/topic, authorization, parameter, request, response, status/error, idempotency, timeout, retry, dan rate limit.
-   - Gunakan schema terstruktur dan format waktu, angka, mata uang, encoding, dan identifier yang konsisten.
-
-7. Rancang integrasi antarsistem.
-   - Bedakan komunikasi synchronous dan asynchronous.
-   - Definisikan ownership, delivery semantics, ordering, deduplication, correlation ID, retry, backoff, dead-letter handling, dan reconciliation bila relevan.
-   - Jangan mengasumsikan exactly-once delivery tanpa dukungan teknis yang tervalidasi.
-
-8. Rancang keamanan dan privasi.
-   - Terapkan authentication, authorization, least privilege, input validation, encryption, secret handling, audit, dan data minimization.
-   - Larang sensitive data pada URL, log, error, atau event tanpa perlindungan yang sesuai.
-   - Dokumentasikan threat dan kontrol dengan ID `SEC-001`.
-
-9. Rancang evolusi dan kompatibilitas.
-   - Definisikan API versioning, schema evolution, deprecation, compatibility, dan migration strategy.
-   - Pastikan perubahan dapat di-roll back atau memiliki recovery plan.
-
-10. Buat traceability dan keputusan desain.
-   - Hubungkan requirement, business rule, entity, field, API, event, security control, dan acceptance criteria.
-   - Catat keputusan dengan ID `ADR-001`, alternatif, alasan, dan konsekuensi.
-
-11. Lakukan quality checks.
-   - Periksa integritas, konsistensi, efisiensi, keamanan, testability, operability, compatibility, traceability, dan business value.
-
-12. Hentikan jika informasi tidak mencukupi.
-   - Jangan memfinalkan schema atau kontrak bila semantics, ownership, business rule, keamanan, atau integrasi kritis belum jelas.
-   - Ajukan pertanyaan klarifikasi yang spesifik.
-
-## Output Format
-Hasilkan output dengan struktur berikut:
+## Output
+Buat file `campus-service-request-maintenance-database-api-design.md` dengan struktur berikut:
 
 ```markdown
-# Database and API Design: <Nama Sistem/Fitur>
+# Campus Service Request and Maintenance System - Database and API Design
 
-## 1. Ringkasan
-- Tujuan bisnis:
-- Ruang lingkup:
-- Di luar ruang lingkup:
-- Aktor dan sistem terlibat:
-- Teknologi/batasan yang diberikan:
+## 1. Design Summary
+- Project Name:
+- Database Type:
+- API Style:
+- Source Documents:
+- Scope:
+- Out of Scope:
+- Assumptions:
+- Open Questions:
 
-## 2. Konteks dan Asumsi
-### 2.1 Sumber yang Ditinjau
-| Source ID | Sumber | Ringkasan | Relevansi |
+## 2. Data Model Overview
+| Entity | Purpose | Source Requirement | Notes |
 |---|---|---|---|
+| service_requests | Menyimpan laporan maintenance fasilitas | FR-01 | ... |
 
-### 2.2 Asumsi
-| Assumption ID | Asumsi | Alasan | Validasi | Risiko Jika Salah |
+## 3. Database Schema
+### Table: service_requests
+- Source Requirement: FR-01, FR-02
+- Purpose: Menyimpan request perbaikan fasilitas yang dibuat pengguna.
+
+| Column | Type | Constraint | Nullable | Description |
 |---|---|---|---|---|
+| id | INTEGER | PRIMARY KEY | No | Unique identifier |
+| title | TEXT | - | No | Judul singkat laporan |
+| status | TEXT | CHECK atau validasi API | No | Status aktif request |
 
-## 3. Data Flow dan Ownership
-| Data Flow ID | Data | Producer | Consumer | System of Record | Trigger/Protocol | Sensitivitas |
-|---|---|---|---|---|---|---|
+Relationships:
+- `service_requests.requester_id` references `users.id`.
+- `service_requests.category_id` references `request_categories.id`.
 
-## 4. Database Design
-### 4.1 Pilihan Penyimpanan
-| Decision ID | Kebutuhan | Pilihan | Alternatif | Alasan | Konsekuensi |
-|---|---|---|---|---|---|
+Validation Notes:
+- Status harus mengikuti status flow yang disetujui.
+- Data sensitif tidak boleh disimpan tanpa requirement.
 
-### 4.2 Entity dan Relationship
-| Entity ID | Entity | Tujuan | Primary Key | Relationship | Requirement |
-|---|---|---|---|---|---|
-
-### 4.3 Data Dictionary
-| Field ID | Entity.Field | Tipe | Null | Default | Constraint/Validasi | Sensitivitas | Deskripsi |
-|---|---|---|---|---|---|---|---|
-
-### 4.4 Index dan Pola Akses
-| Index ID | Entity | Kolom | Tipe/Urutan | Query yang Didukung | Trade-off |
-|---|---|---|---|---|---|
-
-### 4.5 Lifecycle dan Migration
-| Item ID | Area | Aturan/Strategi | Trigger/Jadwal | Recovery/Rollback |
-|---|---|---|---|---|
-
-## 5. API Design
-### 5.1 API Operations
-| API ID | Consumer | Method/Operation | Path/Topic | Tujuan | Authorization | Idempotency |
-|---|---|---|---|---|---|---|
-
-### 5.2 Request dan Response Contract
-| API ID | Bagian | Field | Tipe | Wajib | Constraint | Deskripsi |
-|---|---|---|---|---|---|---|
-
-### 5.3 Error Contract
-| Error Code | HTTP/Transport Status | Kondisi | Pesan Aman | Retryable | Tindakan Consumer |
-|---|---|---|---|---|---|
-
-### 5.4 Query, Pagination, dan Rate Limit
-| API ID | Filtering/Sorting | Pagination | Batas | Rate Limit | Timeout |
-|---|---|---|---|---|---|
-
-## 6. Event dan Integrasi Eksternal
-| Event/Integration ID | Producer | Consumer | Trigger | Schema/Contract | Delivery/Retry | Failure Handling |
-|---|---|---|---|---|---|---|
-
-## 7. Security dan Privacy
-| Control ID | Risiko/Data | Kontrol | Enforcement Point | Verifikasi |
-|---|---|---|---|---|
-
-## 8. Non-Functional Design
-| NFR ID | Atribut | Target Terukur | Mekanisme Desain | Cara Verifikasi |
-|---|---|---|---|---|
-
-## 9. Versioning dan Compatibility
-| Item ID | Contract/Schema | Strategi | Compatibility | Deprecation/Migration |
-|---|---|---|---|---|
-
-## 10. Traceability Matrix
-| Requirement/Rule | Entity/Field | API/Event | Security Control | Acceptance Criteria | Status |
-|---|---|---|---|---|---|
-
-## 11. Gap, Risiko, dan Pertanyaan Terbuka
-### Gap
--
-
-### Risiko
--
-
-### Pertanyaan Terbuka
--
-
-## 12. Quality Check Result
-| Check | Result | Temuan/Bukti | Tindakan |
+## 4. Relationship Summary
+| Relationship | Type | Reason | Requirement ID |
 |---|---|---|---|
+| users -> service_requests | One-to-many | Satu requester dapat membuat banyak request | FR-01 |
+
+## 5. Status Flow Data Handling
+| Status | Stored In | Changed By | API Endpoint | Requirement ID |
+|---|---|---|---|---|
+| Submitted | service_requests.status, status_history | Requester | POST /service-requests | FR-01 |
+
+## 6. API Contract
+### POST /service-requests
+- Purpose: Membuat service request baru.
+- Source Requirement: FR-01
+- Allowed Actors: Requester
+- Authentication Required: Yes
+
+Request Body:
+```json
+{
+  "title": "Lampu ruang kelas rusak",
+  "description": "Lampu tidak menyala sejak pagi",
+  "location_id": 1,
+  "category_id": 2,
+  "priority": "medium"
+}
 ```
 
-Jika format machine-readable diminta, hasilkan kontrak menggunakan standar yang sesuai seperti OpenAPI, AsyncAPI, JSON Schema, GraphQL SDL, atau DDL, lalu pastikan konsisten dengan dokumen desain. Jangan mengklaim kontrak valid sebelum melakukan validasi syntax/schema.
+Success Response 201:
+```json
+{
+  "id": 101,
+  "status": "Submitted",
+  "message": "Service request created"
+}
+```
 
-## Rules
-- Jangan membuat fakta, field, endpoint, business rule, volume, SLA, atau kontrak eksternal yang tidak diberikan.
-- Tandai asumsi secara eksplisit dengan ID `ASM-001`, `ASM-002`, dan seterusnya.
-- Gunakan ID stabil untuk data flow, entity, field, relationship, index, API, event, security control, keputusan, dan error.
-- Gunakan istilah domain yang konsisten dan dokumentasikan definisinya.
-- Setiap entity dan field harus memiliki tujuan atau sumber yang jelas.
-- Setiap relationship harus memiliki cardinality dan referential behavior.
-- Setiap constraint harus dapat diuji.
-- Jangan menggunakan tipe data generik jika precision, timezone, encoding, ukuran, atau batas nilainya penting.
-- Jangan menyimpan nilai turunan tanpa alasan, ownership, dan mekanisme sinkronisasi.
-- Jangan membuat index tanpa query atau pola akses yang mendukungnya.
-- Jangan mengekspos struktur database sebagai kontrak API tanpa pertimbangan domain, keamanan, dan compatibility.
-- Setiap API operation harus memiliki consumer, tujuan, authorization, input, output, dan error behavior.
-- Gunakan status code dan error code secara konsisten; jangan membocorkan stack trace atau data sensitif.
-- Operasi retryable harus memiliki idempotency atau strategi deduplication yang jelas.
-- List endpoint harus mendefinisikan pagination dan batas hasil.
-- Perubahan kontrak harus memiliki versioning, compatibility, deprecation, atau migration strategy.
-- Pisahkan authentication dari authorization.
-- Terapkan least privilege dan data minimization.
-- Gunakan transaksi hanya untuk boundary konsistensi yang jelas.
-- Jangan menggunakan kata ambigu seperti cepat, besar, scalable, aman, real-time, atau high availability tanpa ukuran dan kondisi pengujian.
-- Jangan menghasilkan desain yang tidak dapat diuji atau ditelusuri ke requirement.
+Error Cases:
+| Status Code | Condition | Response Summary |
+|---|---|---|
+| 400 | Payload tidak valid | Validation error |
+| 401 | User belum login | Unauthorized |
+| 403 | Role tidak diizinkan | Forbidden |
 
-## Quality Checks
-Sebelum finalisasi, periksa apakah output:
+Database Tables Used:
+- service_requests
+- status_history
 
-- Lengkap: data flow, ownership, schema, relationship, constraint, API contract, error, keamanan, lifecycle, dan integrasi relevan tersedia.
-- Konsisten: nama, tipe, enum, identifier, waktu, status, dan semantics sama pada database dan API.
-- Berintegritas: key, uniqueness, nullability, referential action, transaction boundary, dan validation jelas.
-- Efisien: query utama memiliki pola akses dan index yang tepat; desain menghindari over-fetching, N+1, dan pertukaran data berlebihan.
-- Aman: authentication, authorization, validation, encryption, audit, secret, dan sensitive data handling jelas.
-- Dapat diuji: schema, constraint, endpoint, error, retry, compatibility, dan NFR memiliki cara verifikasi.
-- Traceable: requirement dan business rule terhubung ke entity, field, API, event, security control, dan acceptance criteria.
-- Reliable: timeout, retry, idempotency, deduplication, failure handling, dan recovery tersedia jika relevan.
-- Compatible: versioning dan schema evolution melindungi consumer yang ada.
-- Operable: monitoring, correlation, audit, backup, restore, retention, dan migration dipertimbangkan.
-- Bernilai bisnis: data dan operasi mendukung use case serta tidak menambah kompleksitas tanpa manfaat.
-- Tervalidasi: status item jelas seperti `Draft`, `Pending Validation`, `Validated`, `Assumption`, `Conflict`, atau `Blocked`.
+Business Rules:
+- BR-01: Request baru dimulai dari status Submitted.
 
-## Failure Conditions
+## 7. Role Access Matrix
+| Endpoint | Requester | Administrator | Technician | Facility Manager |
+|---|---|---|---|---|
+| POST /service-requests | Yes | Optional/TBD | No | No |
+
+## 8. Requirement Traceability Matrix
+| Requirement ID | Database Tables | API Endpoints | Notes |
+|---|---|---|---|
+| FR-01 | service_requests, status_history | POST /service-requests | ... |
+
+## 9. Business Rule Mapping
+| Business Rule ID | Rule Summary | Enforced By | Related Table/API |
+|---|---|---|---|
+| BR-01 | Request baru harus berstatus Submitted | API validation | POST /service-requests |
+
+## 10. Non-Functional Design Notes
+| NFR ID | Concern | Database/API Decision | Verification |
+|---|---|---|---|
+| NFR-01 | Security | Role-based access per endpoint | Authorization test |
+
+## 11. Assumptions
+- ...
+
+## 12. Risks
+- ...
+
+## 13. Open Questions
+- ...
+
+## 14. Quality Check Result
+- Complete:
+- Consistent:
+- Traceable:
+- Testable:
+- Secure:
+- Ready for Implementation:
+```
+
+Jika pengguna meminta output terpisah, buat dua file:
+- `database-schema.md` untuk tabel, kolom, relasi, constraint, dan data rules.
+- `api-contract.md` untuk endpoint, role access, payload, response, dan error cases.
+
+## Aturan
+- Jangan membuat tabel, kolom, endpoint, role, atau status yang tidak memiliki dasar requirement.
+- Tandai asumsi dengan label `Asumsi`.
+- Gunakan requirement ID pada setiap tabel dan endpoint.
+- Jika requirement belum memiliki ID, gunakan ID sementara seperti `REQ-TEMP-001`.
+- Nama tabel, kolom, endpoint, dan response harus konsisten dengan istilah domain yang digunakan requirement.
+- Endpoint harus dibuat berdasarkan aksi bisnis, bukan hanya operasi CRUD tabel.
+- Setiap endpoint harus memiliki allowed actors.
+- Setiap endpoint yang mengubah data harus menjelaskan validasi utama dan error cases.
+- Setiap tabel harus memiliki primary key.
+- Setiap foreign key harus merujuk ke tabel yang memang ada di desain.
+- Jangan mengembalikan password, token rahasia, atau data sensitif di response API.
+- Jangan merancang fitur opsional seperti upload foto, email notification, atau dashboard jika tidak disetujui.
+- Jangan memakai tipe data atau fitur database yang bertentangan dengan batasan teknologi proyek.
+- Jangan menulis kode implementasi, migration final, atau query SQL produksi kecuali diminta eksplisit.
+- Pisahkan fakta requirement, asumsi, risiko, dan pertanyaan terbuka.
+
+## Quality Check
+Periksa hasil sebelum diberikan:
+- Apakah setiap functional requirement memiliki minimal satu tabel atau endpoint pendukung?
+- Apakah setiap endpoint memiliki requirement sumber?
+- Apakah setiap tabel memiliki tujuan yang jelas dan requirement sumber?
+- Apakah relasi antar tabel konsisten dan tidak menggantung?
+- Apakah alur status service request tercermin dalam database dan API?
+- Apakah role access setiap endpoint jelas?
+- Apakah request dan response API cukup lengkap untuk dipakai frontend?
+- Apakah business rules diterapkan pada database constraint, validasi API, atau keduanya?
+- Apakah non-functional requirements seperti security, auditability, performance, dan privacy sudah dipetakan?
+- Apakah desain menghindari data sensitif yang tidak perlu?
+- Apakah semua asumsi dan open questions ditulis terpisah?
+- Apakah hasil siap digunakan untuk issue planning dan implementasi?
+
+## Kondisi Gagal
 Skill harus berhenti atau meminta klarifikasi jika:
+- Requirement utama belum tersedia.
+- Architecture design belum tersedia atau belum cukup menjelaskan komponen backend dan database.
+- Daftar aktor dan hak akses belum jelas.
+- Alur status service request belum tersedia atau saling bertentangan.
+- Acceptance criteria tidak cukup untuk menentukan request/response API.
+- Requirement menyebut data yang harus disimpan tetapi struktur atau sumber datanya tidak jelas.
+- Requirement meminta integrasi eksternal tetapi provider, akses, atau batasannya belum disetujui.
+- Batasan teknologi database/backend belum jelas dan memengaruhi keputusan desain.
+- Ada requirement yang berpotensi menyimpan data sensitif tetapi aturan privacy/security belum tersedia.
 
-- Tujuan bisnis, scope, atau use case utama tidak tersedia.
-- Arti, sumber, owner, atau lifecycle data kritis tidak diketahui.
-- Business rule atau requirement saling bertentangan.
-- Consumer, producer, atau system of record tidak dapat ditentukan.
-- Permission, klasifikasi data, atau kebutuhan compliance kritis tidak jelas.
-- API operation tidak memiliki behavior, input, output, atau error outcome yang dapat divalidasi.
-- Kontrak sistem eksternal tidak tersedia dan tidak boleh diasumsikan.
-- Target performa, availability, RPO, atau RTO diwajibkan tetapi tidak memiliki ukuran.
-- Perubahan schema atau API berisiko merusak consumer tanpa migration atau compatibility plan.
-- Desain memerlukan keputusan arsitektur yang berada di luar scope dan belum disetujui.
+Jika kondisi gagal terjadi, hasilkan daftar pertanyaan klarifikasi dan jangan membuat desain final yang terlihat pasti.
 
-Saat berhenti, berikan:
-
-- Bagian desain yang terblokir.
-- Informasi yang kurang atau bertentangan.
-- Risiko jika desain dilanjutkan berdasarkan asumsi.
-- Pertanyaan klarifikasi yang diperlukan.
+## Human Review
+- Mahasiswa harus memeriksa apakah tabel dan endpoint sesuai dengan requirement yang disetujui.
+- Mahasiswa harus mengonfirmasi semua asumsi sebelum desain dipakai untuk implementasi.
+- Mahasiswa harus memastikan role access sesuai dengan aturan proyek.
+- Mahasiswa harus memeriksa apakah kompleksitas tabel dan endpoint realistis untuk waktu pengerjaan.
+- Reviewer atau dosen dapat memeriksa traceability dari requirement ke database dan API.
+- Hasil review harus selesai sebelum issue planning atau coding dimulai.
 
 ## Example Invocation
 ```text
-Gunakan skill software-engineering-database-api-design untuk merancang database dan REST API fitur pemesanan konsultasi. Jelaskan struktur data, relationship, constraint, index, endpoint, request/response, error handling, authentication, authorization, komunikasi frontend-backend, serta integrasi payment gateway. Gunakan requirement proyek sebagai sumber dan tandai asumsi secara eksplisit.
+Gunakan skill campus-service-request-maintenance-database-api untuk membuat desain database dan API dari requirement dan architecture design Campus Service Request and Maintenance System. Sertakan tabel, relasi, endpoint, payload, response, error cases, role access, status flow, dan traceability matrix.
 ```
 
 ## Expected Output Example
 ```markdown
-# Database and API Design: Pemesanan Konsultasi
+# Campus Service Request and Maintenance System - Database and API Design
 
-## 3. Data Flow dan Ownership
-| Data Flow ID | Data | Producer | Consumer | System of Record | Trigger/Protocol | Sensitivitas |
-|---|---|---|---|---|---|---|
-| DF-001 | Data pemesanan | Frontend pelanggan | Booking Service | Booking Database | HTTPS/JSON | Internal |
+## 1. Design Summary
+- Project Name: Campus Service Request and Maintenance System
+- Database Type: Relational database
+- API Style: REST API
+- Source Documents: requirements.md, architecture-design.md
+- Scope: Service request submission, assignment, status update, and tracking.
+- Out of Scope: Inventory management and payment.
+- Assumptions:
+  - Asumsi: Sistem memakai autentikasi berbasis akun internal karena SSO kampus belum disebutkan.
+- Open Questions:
+  - Apakah request boleh ditugaskan ke lebih dari satu teknisi?
 
-## 4. Database Design
-### 4.2 Entity dan Relationship
-| Entity ID | Entity | Tujuan | Primary Key | Relationship | Requirement |
-|---|---|---|---|---|---|
-| ENT-001 | bookings | Menyimpan pemesanan konsultasi | booking_id (UUID) | Pelanggan 1:N booking; slot 1:1 booking aktif | FR-001, BR-001 |
-
-### 4.3 Data Dictionary
-| Field ID | Entity.Field | Tipe | Null | Default | Constraint/Validasi | Sensitivitas | Deskripsi |
-|---|---|---|---|---|---|---|---|
-| FLD-001 | bookings.status | VARCHAR(20) | Tidak | pending | Enum: pending, confirmed, cancelled | Internal | Status lifecycle pemesanan |
-
-### 4.4 Index dan Pola Akses
-| Index ID | Entity | Kolom | Tipe/Urutan | Query yang Didukung | Trade-off |
-|---|---|---|---|---|---|
-| IDX-001 | bookings | customer_id, created_at DESC | B-tree | Riwayat booking pelanggan berdasarkan waktu | Menambah biaya write dan storage |
-
-## 5. API Design
-### 5.1 API Operations
-| API ID | Consumer | Method/Operation | Path/Topic | Tujuan | Authorization | Idempotency |
-|---|---|---|---|---|---|---|
-| API-001 | Frontend pelanggan | POST | /v1/bookings | Membuat pemesanan | Pelanggan terautentikasi | Header Idempotency-Key wajib |
-
-### 5.2 Request dan Response Contract
-| API ID | Bagian | Field | Tipe | Wajib | Constraint | Deskripsi |
-|---|---|---|---|---|---|---|
-| API-001 | Request | slot_id | UUID | Ya | Harus merujuk slot tersedia | Slot konsultasi yang dipilih |
-| API-001 | Response | booking_id | UUID | Ya | Identifier unik | ID pemesanan yang dibuat |
-
-### 5.3 Error Contract
-| Error Code | HTTP/Transport Status | Kondisi | Pesan Aman | Retryable | Tindakan Consumer |
-|---|---|---|---|---|---|
-| SLOT_UNAVAILABLE | 409 | Slot sudah dipesan | Slot tidak lagi tersedia | Tidak | Tampilkan pilihan jadwal terbaru |
-
-## 7. Security dan Privacy
-| Control ID | Risiko/Data | Kontrol | Enforcement Point | Verifikasi |
-|---|---|---|---|---|
-| SEC-001 | Akses booking milik pengguna lain | Cocokkan customer_id token dengan owner booking | API authorization middleware | Integration test akses lintas pengguna menghasilkan 403 |
-
-## 10. Traceability Matrix
-| Requirement/Rule | Entity/Field | API/Event | Security Control | Acceptance Criteria | Status |
-|---|---|---|---|---|---|
-| FR-001 / BR-001 | ENT-001 / FLD-001 | API-001 | SEC-001 | AC-001 | Pending Validation |
-
-## 12. Quality Check Result
-| Check | Result | Temuan/Bukti | Tindakan |
+## 2. Data Model Overview
+| Entity | Purpose | Source Requirement | Notes |
 |---|---|---|---|
-| Integritas | Pass | Slot aktif dibatasi satu booking melalui constraint yang harus ditetapkan pada physical design. | Validasi DBMS target. |
-| Traceability | Pass | FR-001 terhubung ke entity, API, security control, dan AC-001. | Tidak ada. |
-| Integrasi eksternal | Needs Follow-Up | Kontrak payment gateway belum diberikan. | Minta API specification resmi dari provider. |
+| users | Menyimpan akun dan role pengguna | FR-01, FR-02 | Role menentukan akses endpoint |
+| service_requests | Menyimpan laporan maintenance | FR-01 | Memiliki status aktif |
+| status_history | Menyimpan riwayat perubahan status | FR-03 | Mendukung audit trail |
+
+## 3. Database Schema
+### Table: service_requests
+- Source Requirement: FR-01
+- Purpose: Menyimpan laporan kerusakan atau kebutuhan maintenance fasilitas kampus.
+
+| Column | Type | Constraint | Nullable | Description |
+|---|---|---|---|---|
+| id | INTEGER | PRIMARY KEY | No | ID request |
+| requester_id | INTEGER | FOREIGN KEY users.id | No | Pembuat request |
+| title | TEXT | - | No | Judul laporan |
+| description | TEXT | - | No | Detail masalah |
+| status | TEXT | Validated by API | No | Status aktif |
+
+Relationships:
+- `requester_id` references `users.id`.
+
+## 6. API Contract
+### POST /service-requests
+- Purpose: Membuat service request baru.
+- Source Requirement: FR-01
+- Allowed Actors: Requester
+- Authentication Required: Yes
+
+Request Body:
+```json
+{
+  "title": "AC ruang lab rusak",
+  "description": "AC tidak dingin sejak kemarin",
+  "location_id": 3,
+  "category_id": 1
+}
+```
+
+Success Response 201:
+```json
+{
+  "id": 25,
+  "status": "Submitted"
+}
+```
+
+Error Cases:
+| Status Code | Condition | Response Summary |
+|---|---|---|
+| 400 | Field wajib kosong | Validation error |
+| 401 | User belum login | Unauthorized |
+
+## 8. Requirement Traceability Matrix
+| Requirement ID | Database Tables | API Endpoints | Notes |
+|---|---|---|---|
+| FR-01 | service_requests, users | POST /service-requests | Membuat laporan baru |
 ```

@@ -168,11 +168,11 @@
 ## 7. Mockup High-Fidelity
 | Mockup ID | Page ID | Viewport | State | Design System Terkait | Link/Lokasi | Status |
 |---|---|---|---|---|---|---|
-| MOCK-001 | PG-002 | Desktop 1440 | Normal | DS-001..DS-006, CMP-001..CMP-003, CMP-012 | Belum dibuat | Draft |
-| MOCK-002 | PG-003 | Desktop 1440 | Normal, no-results | DS-001..DS-006, CMP-001, CMP-002, CMP-004, CMP-005, CMP-011 | Belum dibuat | Draft |
-| MOCK-003 | PG-004 | Desktop 1440 | Normal, loading, permission denied | DS-001..DS-006, CMP-001, CMP-002, CMP-006..CMP-010, CMP-012 | Belum dibuat | Draft |
-| MOCK-004 | PG-005 | Mobile 390 | Validation error, upload progress | DS-001..DS-006, CMP-008, CMP-009, CMP-012 | Belum dibuat | Draft |
-| MOCK-005 | PG-006 | Desktop 1440 | Normal, empty | DS-001..DS-006, CMP-001..CMP-003, CMP-011, CMP-012 | Belum dibuat | Pending Validation |
+| MOCK-001 | PG-002 | Desktop 1440 | Normal | DS-001..DS-006, CMP-001..CMP-003, CMP-012 | [role_aware_home_mockup_1783078634109.jpg](file:///d:/queen/sem8/finance-ai-frontend/campus-maintenance/docs/design/images/role_aware_home_mockup_1783078634109.jpg) | Completed |
+| MOCK-002 | PG-003 | Desktop 1440 | Normal, no-results | DS-001..DS-006, CMP-001, CMP-002, CMP-004, CMP-005, CMP-011 | [report_list_mockup_1783078646020.jpg](file:///d:/queen/sem8/finance-ai-frontend/campus-maintenance/docs/design/images/report_list_mockup_1783078646020.jpg) | Completed |
+| MOCK-003 | PG-004 | Desktop 1440 | Normal, loading, permission denied | DS-001..DS-006, CMP-001, CMP-002, CMP-006..CMP-010, CMP-012 | [report_detail_mockup_1783078657691.jpg](file:///d:/queen/sem8/finance-ai-frontend/campus-maintenance/docs/design/images/report_detail_mockup_1783078657691.jpg) | Completed |
+| MOCK-004 | PG-005 | Mobile 390 | Validation error, upload progress | DS-001..DS-006, CMP-008, CMP-009, CMP-012 | [create_report_mobile_mockup_1783078667162.jpg](file:///d:/queen/sem8/finance-ai-frontend/campus-maintenance/docs/design/images/create_report_mobile_mockup_1783078667162.jpg) | Completed |
+| MOCK-005 | PG-006 | Desktop 1440 | Normal, empty | DS-001..DS-006, CMP-001..CMP-003, CMP-011, CMP-012 | [facility_manager_dashboard_mockup_1783078679325.jpg](file:///d:/queen/sem8/finance-ai-frontend/campus-maintenance/docs/design/images/facility_manager_dashboard_mockup_1783078679325.jpg) | Validated |
 
 ## 8. Prototype Interaktif
 | Prototype ID | Flow ID | Dari | Trigger | Aksi/Transition | Tujuan | Expected Result |

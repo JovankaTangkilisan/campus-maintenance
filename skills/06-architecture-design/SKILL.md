@@ -1,6 +1,310 @@
 ---
+
 name: 06-architecture-design
-description: Panduan untuk merancang, mendokumentasikan, meninjau, dan memvalidasi arsitektur perangkat lunak. Gunakan ketika Codex perlu menentukan struktur sistem, pembagian tanggung jawab komponen, interaksi dan aliran data antar komponen, deployment, integration boundary, serta memilih pola arsitektur dan teknologi agar functional requirements dan non-functional requirements terpenuhi secara traceable.
+description: Menentukan arsitektur aplikasi untuk proyek Campus Service Request and Maintenance System berdasarkan requirements yang sudah divalidasi. Gunakan skill ini ketika perlu merancang komponen frontend, backend/API, database, autentikasi, role access, alur status service request, integrasi notifikasi, dan batasan teknologi sebelum masuk ke Database/API Design atau implementasi.
+---
+
+# 06 Architecture Design
+
+## Tujuan
+Menentukan arsitektur utama aplikasi Campus Service Request and Maintenance System, termasuk pembagian komponen frontend, backend/API, database, autentikasi, notifikasi, dan layanan pendukung lain.
+
+Skill ini memastikan struktur sistem mendukung proses pelaporan kerusakan fasilitas kampus, peninjauan laporan, penugasan teknisi, pembaruan status pekerjaan, dan monitoring maintenance secara jelas, sederhana, dan dapat ditelusuri ke requirement.
+
+Hasil skill ini menjadi dasar untuk Database Design, API Design, UI Design, Issue Planning, dan Implementation.
+
+## Kapan Digunakan
+Gunakan skill ini setelah requirement, user story, acceptance criteria, dan business rules proyek sudah tersedia atau cukup jelas.
+
+Gunakan juga ketika:
+- Tim perlu menentukan struktur sistem sebelum membuat database dan endpoint API.
+- Ada perubahan requirement besar yang memengaruhi komponen, role, data, integrasi, atau alur status.
+- Tim perlu membuat diagram arsitektur aplikasi.
+- Reviewer meminta bukti bahwa arsitektur mendukung functional dan non-functional requirements.
+- Tim perlu memastikan sistem tetap sederhana untuk proyek mahasiswa atau tim kecil.
+
+Jangan gunakan skill ini untuk membuat skema tabel database detail, daftar endpoint API detail, wireframe UI, atau kode implementasi. Bagian tersebut dikerjakan pada skill lanjutan.
+
+## Input
+Informasi berikut harus tersedia sebelum skill dijalankan:
+- Dokumen functional requirements dan non-functional requirements.
+- User stories dan acceptance criteria.
+- Business rules terkait service request dan maintenance.
+- Daftar aktor sistem, minimal:
+  - Pelapor atau Requester.
+  - Administrator.
+  - Teknisi.
+  - Manajer Fasilitas atau Supervisor.
+- Alur status service request, misalnya:
+  - Submitted.
+  - Under Review.
+  - Assigned.
+  - In Progress.
+  - Resolved.
+  - Closed.
+  - Rejected atau Cancelled jika memang ada di requirement.
+- Batasan teknologi proyek, misalnya framework frontend, backend, database, hosting, dan layanan pihak ketiga.
+- Fitur opsional yang sudah disetujui, misalnya upload foto, notifikasi email, dashboard analytics, atau export laporan.
+- Batasan keamanan, privasi data, performa, availability, dan audit trail jika tersedia.
+
+Jika informasi belum lengkap, lanjutkan hanya pada bagian yang dapat divalidasi dan tandai sisanya sebagai asumsi atau pertanyaan terbuka.
+
+## Required Context
+Baca konteks berikut sebelum merancang arsitektur:
+- Requirement ID seperti `FR-01`, `NFR-01`, `BR-01`, atau ID sementara jika dokumen belum memberi ID.
+- Dokumen requirement terkait role dan permission.
+- Dokumen requirement terkait pembuatan, validasi, penugasan, pengerjaan, penyelesaian, dan penutupan service request.
+- Dokumen requirement terkait data fasilitas, lokasi, kategori kerusakan, prioritas, teknisi, dan riwayat status.
+- Dokumen UI design jika sudah tersedia.
+- Dokumen database/API design jika arsitektur sedang diperbarui dari desain yang sudah ada.
+- Struktur repository jika proyek sudah berjalan.
+- Keputusan teknologi yang sudah disetujui oleh tim, dosen, atau stakeholder.
+
+Jangan menebak teknologi, layanan cloud, role, atau fitur tambahan jika tidak ada di konteks. Catat sebagai `TBD` atau pertanyaan terbuka.
+
+## Langkah Kerja
+1. Baca seluruh requirement, user story, acceptance criteria, dan business rules yang tersedia.
+2. Identifikasi aktor utama dan tujuan masing-masing aktor dalam sistem.
+3. Identifikasi komponen utama aplikasi:
+   - Frontend/Web App.
+   - Backend/API.
+   - Database.
+   - Authentication dan Authorization.
+   - File Storage jika upload foto/dokumen disetujui.
+   - Notification Service jika notifikasi disetujui.
+   - Admin/Dashboard module jika dibutuhkan.
+   - Reporting/Analytics module jika tersedia di requirement.
+4. Tentukan tanggung jawab tiap komponen dalam satu sampai tiga kalimat.
+5. Tentukan pola komunikasi antar komponen, misalnya browser mengakses frontend, frontend memanggil REST API, backend membaca/menulis database, backend memicu notifikasi.
+6. Petakan setiap aktor ke komponen dan fitur yang digunakan.
+7. Petakan alur status service request ke komponen yang bertanggung jawab mengubah status.
+8. Petakan requirement functional ke komponen arsitektur agar setiap fitur wajib memiliki tempat dalam sistem.
+9. Petakan non-functional requirements ke keputusan arsitektur, misalnya security, auditability, performance, availability, maintainability, dan scalability.
+10. Tentukan boundary sistem: apa yang berada di dalam aplikasi dan apa yang berada di luar aplikasi.
+11. Identifikasi integrasi eksternal jika ada, seperti email service, SSO kampus, payment, inventory, atau sistem fasilitas kampus.
+12. Buat diagram arsitektur sederhana menggunakan teks, kotak-panah, atau Mermaid.
+13. Buat daftar keputusan arsitektur beserta alasan dan requirement yang didukung.
+14. Catat asumsi, risiko, constraint, dan pertanyaan terbuka.
+15. Lakukan quality check.
+16. Hentikan jika requirement belum cukup, bertentangan, atau arsitektur tidak dapat divalidasi.
+
+## Output
+Buat file `campus-service-request-maintenance-architecture.md` yang berisi:
+
+```markdown
+# Campus Service Request and Maintenance System - Architecture Design
+
+## 1. Architecture Summary
+- Project Name:
+- Architecture Style:
+- Main Goal:
+- Key Constraints:
+- Assumptions:
+
+## 2. System Actors
+| Actor | Description | Main Responsibilities | Related Requirement ID |
+|---|---|---|---|
+| Requester | ... | ... | FR-01 |
+
+## 3. Main Components
+| Component | Responsibility | Used By | Related Requirement ID |
+|---|---|---|---|
+| Frontend/Web App | ... | Requester, Admin, Technician | FR-01, FR-02 |
+
+## 4. Architecture Diagram
+```mermaid
+flowchart LR
+  Requester["Requester"] --> Frontend["Frontend/Web App"]
+  Admin["Administrator"] --> Frontend
+  Technician["Technician"] --> Frontend
+  Manager["Facility Manager"] --> Frontend
+  Frontend --> API["Backend/API"]
+  API --> Auth["Authentication/Authorization"]
+  API --> DB["Database"]
+  API --> Notify["Notification Service"]
+```
+
+## 5. Component Responsibilities
+### Frontend/Web App
+- ...
+
+### Backend/API
+- ...
+
+### Database
+- ...
+
+### Authentication and Authorization
+- ...
+
+### Notification Service
+- ...
+
+## 6. Actor to Component Mapping
+| Actor | Component Used | Main Actions |
+|---|---|---|
+| Requester | Frontend/Web App, Backend/API | Submit request, track status |
+
+## 7. Service Request Status Flow
+| Status | Trigger | Responsible Actor | Responsible Component | Next Status | Related Requirement ID |
+|---|---|---|---|---|---|
+| Submitted | Request created | Requester | Frontend/API | Under Review | FR-01 |
+
+## 8. Requirement to Architecture Mapping
+| Requirement ID | Requirement Summary | Supporting Component | Architecture Decision |
+|---|---|---|---|
+| FR-01 | ... | Frontend, Backend/API, Database | ... |
+
+## 9. Non-Functional Requirement Mapping
+| NFR ID | Quality Attribute | Architecture Decision | Verification Method |
+|---|---|---|---|
+| NFR-01 | Security | Role-based access control | Authorization tests |
+
+## 10. Data and Integration Boundary
+- Internal Data:
+- External Systems:
+- File Storage:
+- Notification Channel:
+- Out of Scope:
+
+## 11. Architecture Decisions
+| Decision ID | Decision | Reason | Requirement Supported | Trade-off |
+|---|---|---|---|---|
+| ADR-01 | ... | ... | NFR-01 | ... |
+
+## 12. Risks and Mitigations
+| Risk | Impact | Mitigation | Owner/TBD |
+|---|---|---|---|
+| ... | ... | ... | TBD |
+
+## 13. Open Questions
+- ...
+
+## 14. Quality Check Result
+- Complete:
+- Consistent:
+- Traceable:
+- Testable:
+- Simple Enough:
+- Supports Functional Requirements:
+- Supports Non-Functional Requirements:
+```
+
+Jika pengguna meminta versi ringkas, tetap hasilkan minimal:
+- Ringkasan arsitektur.
+- Komponen utama.
+- Diagram arsitektur.
+- Pemetaan aktor ke komponen.
+- Alur status service request.
+- Pemetaan requirement ke komponen.
+- Asumsi dan pertanyaan terbuka.
+
+## Aturan
+- Jangan membuat requirement, role, status, integrasi, atau teknologi baru yang tidak diberikan.
+- Tandai semua asumsi secara eksplisit dengan label `Asumsi`.
+- Gunakan requirement ID ketika menghubungkan keputusan arsitektur dengan requirement.
+- Jika requirement belum memiliki ID, buat ID sementara seperti `REQ-TEMP-001` dan jelaskan bahwa ID tersebut sementara.
+- Pisahkan functional requirements dan non-functional requirements dalam pemetaan arsitektur.
+- Jangan merancang skema database detail pada tahap ini.
+- Jangan merancang endpoint API detail pada tahap ini.
+- Jangan menulis kode implementasi pada tahap ini.
+- Jangan menggunakan arsitektur yang terlalu kompleks untuk kebutuhan proyek, seperti microservices, event streaming, atau distributed queue, kecuali requirement secara eksplisit membutuhkannya.
+- Jangan menggunakan kata ambigu seperti `aman`, `cepat`, `mudah digunakan`, atau `scalable` tanpa menjelaskan keputusan arsitektur dan cara verifikasinya.
+- Pastikan setiap komponen memiliki tanggung jawab yang jelas dan tidak tumpang tindih.
+- Pastikan alur status service request memiliki aktor dan komponen penanggung jawab yang jelas.
+- Pastikan keputusan teknologi tetap mengikuti batasan proyek yang diberikan.
+- Jika fitur upload foto digunakan, jelaskan batas arsitektur storage tanpa membuat detail schema atau implementasi upload.
+- Jika fitur notifikasi digunakan, jelaskan channel dan pemicu notifikasi tanpa menebak provider.
+
+## Quality Check
+Periksa hasil sebelum diberikan:
+- Apakah setiap aktor memiliki jalur akses ke komponen yang relevan?
+- Apakah setiap functional requirement terhubung ke minimal satu komponen?
+- Apakah setiap non-functional requirement memiliki keputusan arsitektur dan metode verifikasi?
+- Apakah setiap status service request memiliki trigger, aktor, komponen penanggung jawab, dan next status?
+- Apakah diagram arsitektur mudah dipahami tanpa penjelasan panjang?
+- Apakah boundary antara frontend, backend/API, database, dan layanan eksternal jelas?
+- Apakah arsitektur cukup sederhana untuk proyek Campus Service Request and Maintenance System?
+- Apakah semua asumsi dan pertanyaan terbuka ditandai?
+- Apakah ada requirement yang belum tertampung dalam arsitektur?
+- Apakah hasil siap menjadi dasar Database/API Design?
+
+## Kondisi Gagal
+Skill harus berhenti atau meminta klarifikasi jika:
+- Dokumen requirement belum tersedia.
+- Requirement utama belum divalidasi.
+- Aktor sistem belum jelas.
+- Alur status service request belum tersedia atau saling bertentangan.
+- Batasan teknologi proyek belum jelas dan memengaruhi keputusan arsitektur utama.
+- Requirement meminta integrasi eksternal tetapi sistem eksternal, akses, atau batasannya tidak diketahui.
+- Requirement non-functional penting seperti security atau privacy bertentangan dengan keputusan teknologi yang diberikan.
+- Fitur yang diminta membutuhkan layanan berbayar atau layanan eksternal tetapi belum disetujui.
+- Tidak mungkin membuat diagram arsitektur tanpa menebak komponen inti.
+
+Jika kondisi gagal terjadi, keluarkan daftar klarifikasi yang dibutuhkan dan jangan menghasilkan arsitektur final.
+
+## Human Review
+- Mahasiswa harus memeriksa apakah arsitektur sesuai dengan scope tugas dan kemampuan tim.
+- Mahasiswa harus mengonfirmasi semua asumsi yang dibuat AI.
+- Mahasiswa harus memastikan alur status service request sesuai dengan requirement yang disetujui.
+- Mahasiswa harus memastikan batasan teknologi sudah sesuai instruksi dosen atau kampus.
+- Reviewer atau dosen dapat memeriksa traceability antara requirement, komponen, dan keputusan arsitektur.
+- Hasil review harus diselesaikan sebelum lanjut ke Database/API Design dan Implementation.
+
+## Example Invocation
+```text
+Gunakan skill campus-service-request-maintenance-architecture untuk membuat architecture-design.md dari requirement Campus Service Request and Maintenance System. Sertakan diagram arsitektur, komponen utama, actor mapping, status flow, requirement mapping, asumsi, dan pertanyaan terbuka.
+```
+
+## Expected Output Example
+```markdown
+# Campus Service Request and Maintenance System - Architecture Design
+
+## 1. Architecture Summary
+- Project Name: Campus Service Request and Maintenance System
+- Architecture Style: Layered web application
+- Main Goal: Mendukung pelaporan, peninjauan, penugasan, pengerjaan, dan penutupan service request fasilitas kampus.
+- Key Constraints: TBD
+- Assumptions:
+  - Asumsi: Sistem digunakan melalui web app karena platform belum disebutkan.
+
+## 2. System Actors
+| Actor | Description | Main Responsibilities | Related Requirement ID |
+|---|---|---|---|
+| Requester | Pengguna yang melaporkan masalah fasilitas | Membuat service request dan memantau status | FR-01 |
+| Administrator | Pengelola laporan awal | Meninjau laporan dan mengatur assignment | FR-02 |
+| Technician | Petugas maintenance | Memperbarui progres pekerjaan | FR-03 |
+| Facility Manager | Pengawas fasilitas | Melihat dashboard dan laporan | FR-04 |
+
+## 3. Main Components
+| Component | Responsibility | Used By | Related Requirement ID |
+|---|---|---|---|
+| Frontend/Web App | Menyediakan UI untuk semua role | Semua aktor | FR-01, FR-02, FR-03 |
+| Backend/API | Menjalankan business rules dan status transition | Frontend/Web App | FR-01, BR-01 |
+| Database | Menyimpan request, user, assignment, dan status history | Backend/API | FR-01 |
+
+## 4. Architecture Diagram
+```mermaid
+flowchart LR
+  User["Campus Users"] --> Web["Frontend/Web App"]
+  Web --> API["Backend/API"]
+  API --> Auth["Auth/RBAC"]
+  API --> DB["Database"]
+  API --> Notification["Notification Service"]
+```
+
+## 7. Service Request Status Flow
+| Status | Trigger | Responsible Actor | Responsible Component | Next Status | Related Requirement ID |
+|---|---|---|---|---|---|
+| Submitted | Request dibuat | Requester | Frontend/API | Under Review | FR-01 |
+| Under Review | Admin membuka laporan | Administrator | Backend/API | Assigned atau Rejected | FR-02 |
+| Assigned | Teknisi dipilih | Administrator | Backend/API | In Progress | FR-03 |
+
+## 13. Open Questions
+- Apakah sistem wajib mendukung upload foto kerusakan?
+- Apakah notifikasi menggunakan email, in-app notification, atau keduanya?
+```
+omponen, deployment, integration boundary, serta memilih pola arsitektur dan teknologi agar functional requirements dan non-functional requirements terpenuhi secara traceable.
 ---
 
 # 06 Architecture Design
