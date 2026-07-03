@@ -1130,6 +1130,248 @@ describe('PATCH /api/reports/:reportId/triage - Triage (Admin approve/reject)', 
   });
 });
 
+function createAssignMockDb(options?: {
+  report?: any;
+  updatedReport?: any;
+}) {
+  const queries: QueryLog[] = [];
+  let updateStep = 0;
+
+  const db = {
+    prepare: (sql: string) => {
+      let boundArgs: any[] = [];
+      const stmt = {
+        bind: (...args: any[]) => {
+          boundArgs = args;
+          return stmt;
+        },
+        run: async () => {
+          queries.push({ sql, args: boundArgs });
+          updateStep++;
+          return { success: true, meta: { last_row_id: 888 } };
+        },
+        first: async () => {
+          queries.push({ sql, args: boundArgs });
+          if (sql.includes('SELECT id, status FROM')) {
+            if (options && 'report' in options) return options.report;
+            return { id: 101, status: 'diperiksa' };
+          }
+          if (sql.includes('SELECT id, title, description, location, category, priority, status, created_by, assigned_technician_id, created_at, updated_at FROM')) {
+            return options?.updatedReport ?? {
+              id: 101,
+              title: 'AC Mati di Lab Komputer',
+              description: 'AC tidak menyala sejak pagi.',
+              location: 'Gedung D, Lantai 2',
+              category: 'AC & Pendingin Ruangan',
+              priority: 'high',
+              status: 'ditugaskan',
+              created_by: 'pelapor-1',
+              assigned_technician_id: 'teknisi-1',
+              created_at: '2026-07-03 09:00:00',
+              updated_at: '2026-07-03 11:00:00'
+            };
+          }
+          return null;
+        },
+        all: async () => {
+          queries.push({ sql, args: boundArgs });
+          return { success: true, results: [] };
+        }
+      };
+      return stmt;
+    }
+  } as unknown as D1Database;
+
+  return { db, queries };
+}
+
+describe('POST /api/reports/:reportId/assign - Assign technician', () => {
+  it('POST /api/reports/:reportId/assign - Admin menugaskan teknisi ke laporan diperiksa harus 200', async () => {
+    const { db, queries } = createAssignMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/assign', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: JSON.stringify({ technician_id: 'teknisi-1' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.report.status).toBe('ditugaskan');
+    expect(body.report.assigned_technician_id).toBe('teknisi-1');
+
+    // Verifikasi: deaktivasi lama, insert baru, update status
+    const deactivateQueries = queries.filter(q =>
+      q.sql.includes('UPDATE service_request_assignments') && q.sql.includes('is_active = 0')
+    );
+    expect(deactivateQueries.length).toBe(1);
+    expect(deactivateQueries[0].args[0]).toBe('101');
+
+    const insertQueries = queries.filter(q => q.sql.includes('INSERT INTO service_request_assignments'));
+    expect(insertQueries.length).toBe(1);
+    expect(insertQueries[0].args[1]).toBe('teknisi-1');
+    // is_active = 1 hardcoded in SQL VALUES clause
+
+    const updateStatusQueries = queries.filter(q =>
+      q.sql.includes('UPDATE service_requests') && q.sql.includes("status = 'ditugaskan'")
+    );
+    expect(updateStatusQueries.length).toBe(1);
+    expect(updateStatusQueries[0].args[0]).toBe('teknisi-1');
+
+    const historyQueries = queries.filter(q => q.sql.includes('INSERT INTO service_request_status_history'));
+    expect(historyQueries.length).toBe(1);
+    expect(historyQueries[0].sql).toContain('ditugaskan');
+  });
+
+  it('POST /api/reports/:reportId/assign - Admin menugaskan teknisi ke laporan dibuka_kembali harus 200', async () => {
+    const { db } = createAssignMockDb({
+      report: { id: 101, status: 'dibuka_kembali' }
+    });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/assign', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: JSON.stringify({ technician_id: 'teknisi-2' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.report.status).toBe('ditugaskan');
+  });
+
+  it('POST /api/reports/:reportId/assign - Laporan berstatus baru harus 409', async () => {
+    const { db } = createAssignMockDb({
+      report: { id: 101, status: 'baru' }
+    });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/assign', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: JSON.stringify({ technician_id: 'teknisi-1' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(409);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('CONFLICT');
+    expect(body.message).toContain('Cannot assign');
+  });
+
+  it('POST /api/reports/:reportId/assign - Tanpa technician_id harus 400', async () => {
+    const { db } = createAssignMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/assign', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: JSON.stringify({})
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(400);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('VALIDATION_ERROR');
+    expect(body.message).toContain('Technician ID is required');
+  });
+
+  it('POST /api/reports/:reportId/assign - Laporan tidak ditemukan harus 404', async () => {
+    const { db } = createAssignMockDb({ report: null });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/99999/assign', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: JSON.stringify({ technician_id: 'teknisi-1' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(404);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('NOT_FOUND');
+  });
+
+  it('POST /api/reports/:reportId/assign - Non-Admin role harus 403', async () => {
+    const { db } = createAssignMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/assign', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'pelapor-1',
+        'x-actor-name': 'Fajar Ramadhan',
+        'x-actor-role': 'Pelapor'
+      },
+      body: JSON.stringify({ technician_id: 'teknisi-1' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(403);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('FORBIDDEN');
+  });
+
+  it('POST /api/reports/:reportId/assign - ID non-numeric harus 400', async () => {
+    const { db } = createAssignMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/abc/assign', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      },
+      body: JSON.stringify({ technician_id: 'teknisi-1' })
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(400);
+
+    const body: any = await response.json();
+    expect(body.error).toBe('VALIDATION_ERROR');
+  });
+});
+
   it('GET /api/reports/:reportId - ID non-numeric harus 400', async () => {
     const { db } = createDetailMockDb();
     const env = { DB: db, ATTACHMENTS: mockR2 } as Env;

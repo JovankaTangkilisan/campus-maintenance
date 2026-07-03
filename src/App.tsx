@@ -503,6 +503,13 @@ export default function App() {
     'teknisi-4': 'Slamet Riyadi'
   };
 
+  const NAME_TO_TECHNICIAN_ID: Record<string, string> = {
+    'Budi Santoso': 'teknisi-1',
+    'Andi Wijaya': 'teknisi-2',
+    'Joko Susilo': 'teknisi-3',
+    'Slamet Riyadi': 'teknisi-4'
+  };
+
   const getCurrentTimestamp = () => {
     const d = new Date();
     const pad = (n: number) => n.toString().padStart(2, '0');
@@ -761,23 +768,41 @@ export default function App() {
     }));
   };
 
-  // UC-07: Menugaskan Teknisi
-  const handleAssignTechnician = () => {
-    if (!assignTech) return;
-    const timestamp = getCurrentTimestamp();
-    setReports(prev => prev.map(r => {
-      if (r.id !== selectedReportId) return r;
-      
-      return {
-        ...r,
-        status: 'Ditugaskan',
-        technician: assignTech,
-        history: [
-          ...r.history,
-          { status: 'Ditugaskan', actor: 'Administrator', timestamp, notes: `Ditugaskan kepada teknisi: ${assignTech}.` }
-        ]
-      };
-    }));
+  // UC-07: Menugaskan Teknisi via API
+  const handleAssignTechnician = async () => {
+    if (!assignTech || !selectedReportId || !activeRole) return;
+
+    const session = getSessionForRole(activeRole);
+    const technicianId = NAME_TO_TECHNICIAN_ID[assignTech];
+
+    if (!technicianId) {
+      alert('Teknisi tidak dikenal.');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/reports/${selectedReportId.replace('CM-', '')}/assign`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-actor-id': session.actorId,
+          'x-actor-name': session.actorName,
+          'x-actor-role': session.actorRole
+        },
+        body: JSON.stringify({ technician_id: technicianId })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        alert(`Gagal: ${data.message || 'Terjadi kesalahan saat menugaskan teknisi.'}`);
+        return;
+      }
+
+      setListRefreshToken(t => t + 1);
+      setAssignTech('');
+    } catch (err: any) {
+      alert(`Gagal terhubung ke server: ${err.message}`);
+    }
   };
 
   // UC-08: Mengubah Status Pekerjaan (Teknisi)
@@ -1655,8 +1680,8 @@ export default function App() {
                       </div>
                     )}
 
-                    {/* Assignment Section if priority is set but technician is not assigned */}
-                    {selectedReport.status === 'Diperiksa' && selectedReport.priority && (
+                    {/* Assignment Section for assignable statuses */}
+                    {((selectedReport.status === 'Diperiksa' && selectedReport.priority) || selectedReport.status === 'Dibuka Kembali') && (
                       <div className="action-box action-box-admin animate-pop-in">
                         <span className="action-title">Tugaskan Teknisi</span>
                         <p style={{ fontSize: '0.85rem', color: 'var(--color-fg-muted)', marginBottom: '8px' }}>

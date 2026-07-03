@@ -450,7 +450,86 @@ router.patch('/api/reports/:reportId/triage', mockAuth(['Administrator']), async
   });
 });
 
-// 11. Rute Detail Laporan (GET /api/reports/:reportId) - Semua peran dengan scope berbeda
+// 12. Rute Penugasan Teknisi (POST /api/reports/:reportId/assign) - Khusus Administrator
+router.post('/api/reports/:reportId/assign', mockAuth(['Administrator']), async (request, ctx) => {
+  const actor = ctx.actor!;
+  const reportId = ctx.params.reportId;
+
+  if (!/^\d+$/.test(reportId)) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Report ID must be a positive integer.');
+  }
+
+  // 1. Validasi laporan dan status
+  const report = await ctx.env.DB.prepare(
+    'SELECT id, status FROM service_requests WHERE id = ?'
+  ).bind(reportId).first<any>();
+
+  if (!report) {
+    throw new AppError(404, 'NOT_FOUND', 'Service request not found.');
+  }
+
+  if (report.status !== 'diperiksa' && report.status !== 'dibuka_kembali') {
+    throw new AppError(409, 'CONFLICT', `Cannot assign a report with status '${report.status}'. Only 'diperiksa' or 'dibuka_kembali' reports can be assigned.`);
+  }
+
+  // 2. Parse body
+  let body: any;
+  try {
+    body = await request.json();
+  } catch (e) {
+    throw new AppError(400, 'BAD_REQUEST', 'Invalid JSON body.');
+  }
+
+  const { technician_id } = body;
+  if (!technician_id || !technician_id.trim()) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Technician ID is required.');
+  }
+
+  // 3. Nonaktifkan assignment lama (jika ada)
+  await ctx.env.DB.prepare(
+    `UPDATE service_request_assignments SET is_active = 0 WHERE service_request_id = ? AND is_active = 1`
+  ).bind(reportId).run();
+
+  // 4. Insert assignment baru
+  await ctx.env.DB.prepare(
+    `INSERT INTO service_request_assignments (service_request_id, technician_id, assigned_by, status, is_active) VALUES (?, ?, ?, 'assigned', 1)`
+  ).bind(reportId, technician_id.trim(), actor.id).run();
+
+  // 5. Update status laporan + assigned_technician_id
+  await ctx.env.DB.prepare(
+    `UPDATE service_requests SET status = 'ditugaskan', assigned_technician_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+  ).bind(technician_id.trim(), reportId).run();
+
+  // 6. Catat riwayat status
+  await ctx.env.DB.prepare(
+    `INSERT INTO service_request_status_history (service_request_id, old_status, new_status, actor_id, actor_role, notes) VALUES (?, ?, 'ditugaskan', ?, ?, ?)`
+  ).bind(reportId, report.status, actor.id, actor.role, `Teknisi ${technician_id.trim()} ditugaskan.`).run();
+
+  // 7. Ambil data terkini
+  const updatedReport = await ctx.env.DB.prepare(
+    `SELECT id, title, description, location, category, priority, status, created_by, assigned_technician_id, created_at, updated_at FROM service_requests WHERE id = ?`
+  ).bind(reportId).first<any>();
+
+  return Response.json({
+    success: true,
+    report: {
+      id: updatedReport.id,
+      report_code: `CM-${updatedReport.id}`,
+      title: updatedReport.title,
+      description: updatedReport.description,
+      location: updatedReport.location,
+      category: updatedReport.category,
+      priority: updatedReport.priority,
+      status: updatedReport.status,
+      created_by: updatedReport.created_by,
+      assigned_technician_id: updatedReport.assigned_technician_id ?? null,
+      created_at: updatedReport.created_at,
+      updated_at: updatedReport.updated_at
+    }
+  });
+});
+
+// 13. Rute Detail Laporan (GET /api/reports/:reportId) - Semua peran dengan scope berbeda
 router.get('/api/reports/:reportId', mockAuth(), async (_request, ctx) => {
   const actor = ctx.actor!;
   const reportId = ctx.params.reportId;

@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS service_requests (
     created_by TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    rejection_reason TEXT
+    rejection_reason TEXT,
+    assigned_technician_id TEXT
 );
 
 -- 2. Tabel Komentar: service_request_comments
@@ -49,6 +50,7 @@ CREATE TABLE IF NOT EXISTS service_request_assignments (
     assigned_by TEXT NOT NULL,
     assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
     status TEXT NOT NULL CHECK(status IN ('assigned', 'accepted', 'rejected', 'completed')) DEFAULT 'assigned',
+    is_active INTEGER DEFAULT 1,
     FOREIGN KEY (service_request_id) REFERENCES service_requests(id) ON DELETE CASCADE
 );
 
