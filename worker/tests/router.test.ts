@@ -1,10 +1,65 @@
 import { describe, it, expect } from 'vitest';
 import { router } from '../index';
-import { Env } from '../types';
+import type { Env } from '../types';
+
+// Mocking D1 Database
+const mockDB = {
+  prepare: (_sql: string) => {
+    let boundArgs: any[] = [];
+    const stmt = {
+      bind: (...args: any[]) => {
+        boundArgs = args;
+        return stmt;
+      },
+      run: async () => {
+        return {
+          success: true,
+          meta: { last_row_id: 999 }
+        };
+      },
+      first: async () => {
+        return {
+          id: 999,
+          title: boundArgs[0] || 'Test Laporan',
+          description: boundArgs[1] || 'Test Deskripsi',
+          location: boundArgs[2] || 'Test Lokasi',
+          category: boundArgs[3] || 'AC & Pendingin Ruangan',
+          priority: 'low',
+          status: 'baru',
+          created_by: 'pelapor-1',
+          created_at: '2026-07-03 21:00:00',
+          updated_at: '2026-07-03 21:00:00'
+        };
+      },
+      all: async () => {
+        return {
+          success: true,
+          results: [
+            {
+              id: 1,
+              service_request_id: 999,
+              old_status: null,
+              new_status: 'baru',
+              actor_id: 'pelapor-1',
+              actor_role: 'Pelapor',
+              changed_at: '2026-07-03 21:00:00',
+              notes: 'Laporan baru dibuat.'
+            }
+          ]
+        };
+      }
+    };
+    return stmt;
+  }
+} as unknown as D1Database;
+
+const mockEnv = {
+  DB: mockDB
+} as Env;
+
+const mockCtx = {} as ExecutionContext;
 
 describe('Router & Middleware Tests', () => {
-  const mockEnv = {} as Env;
-  const mockCtx = {} as ExecutionContext;
 
   it('GET /api/ping - rute publik harus mengembalikan status 200', async () => {
     const request = new Request('http://localhost/api/ping', { method: 'GET' });
@@ -91,5 +146,87 @@ describe('Router & Middleware Tests', () => {
     expect(body.error).toBe('INTERNAL_SERVER_ERROR');
     expect(body.message).toBe('An unexpected error occurred on the server');
     expect(body.stack).toBeUndefined();
+  });
+});
+
+describe('POST /api/reports - Create Service Request Features', () => {
+  it('POST /api/reports - Pelapor mengirim payload valid harus mengembalikan 201 dan menyimpan laporan', async () => {
+    const request = new Request('http://localhost/api/reports', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'pelapor-1',
+        'x-actor-name': 'Fajar Ramadhan',
+        'x-actor-role': 'Pelapor'
+      },
+      body: JSON.stringify({
+        title: 'AC Bocor di R.301',
+        description: 'AC meneteskan air sangat deras di bagian belakang.',
+        location: 'Gedung D, Lantai 3',
+        category: 'AC & Pendingin Ruangan'
+      })
+    });
+
+    const response = await router.handle(request, mockEnv, mockCtx);
+    expect(response.status).toBe(201);
+    
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.report.id).toBe(999);
+    expect(body.report.status).toBe('baru');
+    expect(body.report.priority).toBe('low');
+    expect(body.report.history).toBeInstanceOf(Array);
+    expect(body.report.history[0].new_status).toBe('baru');
+    expect(body.report.history[0].old_status).toBeNull();
+  });
+
+  it('POST /api/reports - Jika field wajib kosong harus mengembalikan 400 VALIDATION_ERROR', async () => {
+    const request = new Request('http://localhost/api/reports', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'pelapor-1',
+        'x-actor-name': 'Fajar Ramadhan',
+        'x-actor-role': 'Pelapor'
+      },
+      body: JSON.stringify({
+        title: 'AC Bocor di R.301',
+        description: '', // Kosong!
+        location: 'Gedung D, Lantai 3',
+        category: 'AC & Pendingin Ruangan'
+      })
+    });
+
+    const response = await router.handle(request, mockEnv, mockCtx);
+    expect(response.status).toBe(400);
+    
+    const body: any = await response.json();
+    expect(body.error).toBe('VALIDATION_ERROR');
+    expect(body.message).toContain('Description is required');
+  });
+
+  it('POST /api/reports - Jika diakses Administrator atau Teknisi harus mengembalikan 403 Forbidden', async () => {
+    const request = new Request('http://localhost/api/reports', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Admin User',
+        'x-actor-role': 'Administrator' // Admin tidak boleh mengajukan laporan!
+      },
+      body: JSON.stringify({
+        title: 'AC Bocor di R.301',
+        description: 'AC meneteskan air.',
+        location: 'Gedung D, Lantai 3',
+        category: 'AC & Pendingin Ruangan'
+      })
+    });
+
+    const response = await router.handle(request, mockEnv, mockCtx);
+    expect(response.status).toBe(403);
+    
+    const body: any = await response.json();
+    expect(body.error).toBe('FORBIDDEN');
+    expect(body.message).toContain('Access denied');
   });
 });

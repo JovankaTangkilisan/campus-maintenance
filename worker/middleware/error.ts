@@ -1,13 +1,14 @@
-import { RouteContext } from '../types';
+import type { RouteContext } from '../types';
 
 export class AppError extends Error {
-  constructor(
-    public status: number,
-    public errorCode: string,
-    message: string
-  ) {
+  status: number;
+  errorCode: string;
+
+  constructor(status: number, errorCode: string, message: string) {
     super(message);
     this.name = 'AppError';
+    this.status = status;
+    this.errorCode = errorCode;
   }
 }
 

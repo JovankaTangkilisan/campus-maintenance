@@ -1,4 +1,4 @@
-import { RouteContext, RouteHandler, Middleware, Env } from './types';
+import type { RouteContext, RouteHandler, Middleware, Env } from './types';
 
 interface Route {
   method: string;

@@ -236,6 +236,10 @@ export default function App() {
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newLocation, setNewLocation] = useState('');
+  const [newCategory, setNewCategory] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [submitSuccess, setSubmitSuccess] = useState(false);
   
   // Technician specific filters
   const [selectedTechnicianName, setSelectedTechnicianName] = useState<string>('Budi Santoso');
@@ -267,44 +271,125 @@ export default function App() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
-  // UC-01: Buat Laporan Baru
-  const handleCreateReport = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTitle || !newDescription || !newLocation) {
-      alert('Mohon isi semua field wajib!');
-      return;
-    }
-    
-    const newId = `CM-${100 + reports.length + 1}`;
-    const timestamp = getCurrentTimestamp();
-    const author = activeRole === 'pelapor' ? 'Fajar Ramadhan (Asisten Lab)' : 'Demo User';
-    
-    const newReport: Report = {
-      id: newId,
-      title: newTitle,
-      description: newDescription,
-      location: newLocation,
-      category: '',
-      priority: '',
-      status: 'Baru',
-      reporter: author,
-      reporterId: 'pelapor-1',
+  // UC-01: Buat Laporan Baru (REST API)
+  const mapDbReportToUi = (dbReport: any, authorName: string): Report => {
+    const statusMap: Record<string, Report['status']> = {
+      'baru': 'Baru',
+      'diperiksa': 'Diperiksa',
+      'ditolak': 'Ditolak',
+      'ditugaskan': 'Ditugaskan',
+      'diterima': 'Diterima',
+      'sedang_dikerjakan': 'Sedang Dikerjakan',
+      'selesai_dikerjakan': 'Selesai Dikerjakan',
+      'ditutup': 'Ditutup',
+      'dibuka_kembali': 'Dibuka Kembali'
+    };
+
+    const priorityMap: Record<string, Report['priority']> = {
+      'low': 'Rendah',
+      'medium': 'Sedang',
+      'high': 'Tinggi',
+      'urgent': 'Mendesak'
+    };
+
+    return {
+      id: `CM-${dbReport.id}`,
+      title: dbReport.title,
+      description: dbReport.description,
+      location: dbReport.location,
+      category: dbReport.category,
+      priority: priorityMap[dbReport.priority] || '',
+      status: statusMap[dbReport.status] || 'Baru',
+      reporter: authorName,
+      reporterId: dbReport.created_by,
       technician: '',
-      dateCreated: timestamp,
-      history: [
-        { status: 'Baru', actor: author, timestamp, notes: 'Laporan berhasil diajukan.' }
+      dateCreated: dbReport.created_at,
+      history: dbReport.history ? dbReport.history.map((h: any) => ({
+        status: statusMap[h.new_status] || h.new_status,
+        actor: h.actor_id === 'pelapor-1' ? 'Fajar Ramadhan (Asisten Lab)' : h.actor_id,
+        timestamp: h.changed_at,
+        notes: h.notes || ''
+      })) : [
+        { status: 'Baru', actor: authorName, timestamp: dbReport.created_at, notes: 'Laporan berhasil diajukan.' }
       ],
       comments: []
     };
+  };
 
-    setReports([newReport, ...reports]);
-    setSelectedReportId(newId);
-    
-    // Reset form
-    setNewTitle('');
-    setNewDescription('');
-    setNewLocation('');
-    setIsNewReportModalOpen(false);
+  const handleCreateReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTitle || !newDescription || !newLocation || !newCategory) {
+      setSubmitError('Mohon lengkapi semua data wajib!');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError('');
+    setSubmitSuccess(false);
+
+    // Map activeRole to mock headers
+    let roleHeader = 'Pelapor';
+    let actorId = 'pelapor-1';
+    let actorName = 'Fajar Ramadhan (Asisten Lab)';
+
+    if (activeRole === 'admin') {
+      roleHeader = 'Administrator';
+      actorId = 'admin-1';
+      actorName = 'Administrator';
+    } else if (activeRole === 'teknisi') {
+      roleHeader = 'Teknisi';
+      actorId = 'teknisi-1';
+      actorName = 'Budi Santoso';
+    } else if (activeRole === 'manajer') {
+      roleHeader = 'Manajer Fasilitas';
+      actorId = 'manajer-1';
+      actorName = 'Facility Manager';
+    }
+
+    try {
+      const response = await fetch('/api/reports', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-actor-id': actorId,
+          'x-actor-name': actorName,
+          'x-actor-role': roleHeader
+        },
+        body: JSON.stringify({
+          title: newTitle,
+          description: newDescription,
+          location: newLocation,
+          category: newCategory
+        })
+      });
+
+      const data: any = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Terjadi kesalahan saat menyimpan laporan.');
+      }
+
+      setSubmitSuccess(true);
+
+      const newUiReport = mapDbReportToUi(data.report, actorName);
+      setReports([newUiReport, ...reports]);
+      setSelectedReportId(newUiReport.id);
+
+      // Reset form dan tutup modal setelah jeda 1.5 detik
+      setTimeout(() => {
+        setNewTitle('');
+        setNewDescription('');
+        setNewLocation('');
+        setNewCategory('');
+        setSubmitSuccess(false);
+        setIsNewReportModalOpen(false);
+      }, 1500);
+
+    } catch (err: any) {
+      setSubmitError(err.message || 'Gagal mengirim laporan. Silakan coba lagi.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // UC-05: Memeriksa Laporan (Terima/Tolak)
@@ -1326,8 +1411,19 @@ export default function App() {
               <button className="modal-close" onClick={() => setIsNewReportModalOpen(false)}>&times;</button>
             </div>
             
-            <form onSubmit={handleCreateReport}>
+             <form onSubmit={handleCreateReport}>
               <div className="modal-body">
+                {submitError && (
+                  <div style={{ padding: '10px 14px', backgroundColor: '#fde8e8', color: '#9b1c1c', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '16px', border: '1px solid #f8b4b4' }}>
+                    {submitError}
+                  </div>
+                )}
+                {submitSuccess && (
+                  <div style={{ padding: '10px 14px', backgroundColor: '#def7ec', color: '#03543f', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '16px', border: '1px solid #bcf0da' }}>
+                    Laporan baru berhasil diajukan dengan status <strong>Baru</strong>!
+                  </div>
+                )}
+
                 <div className="form-group">
                   <label className="form-label">Judul Laporan / Kerusakan *</label>
                   <input 
@@ -1337,7 +1433,24 @@ export default function App() {
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
                     required
+                    disabled={isSubmitting}
                   />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Jenis Masalah / Kategori *</label>
+                  <select 
+                    className="form-input"
+                    value={newCategory}
+                    onChange={(e) => setNewCategory(e.target.value)}
+                    required
+                    disabled={isSubmitting}
+                  >
+                    <option value="">-- Pilih Jenis Masalah --</option>
+                    {CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="form-group">
@@ -1349,6 +1462,7 @@ export default function App() {
                     value={newLocation}
                     onChange={(e) => setNewLocation(e.target.value)}
                     required
+                    disabled={isSubmitting}
                   />
                 </div>
 
@@ -1361,6 +1475,7 @@ export default function App() {
                     value={newDescription}
                     onChange={(e) => setNewDescription(e.target.value)}
                     required
+                    disabled={isSubmitting}
                   />
                 </div>
 
@@ -1373,8 +1488,10 @@ export default function App() {
               </div>
 
               <div className="modal-footer">
-                <button type="button" className="btn" onClick={() => setIsNewReportModalOpen(false)}>Batal</button>
-                <button type="submit" className="btn btn-primary">Ajukan Laporan</button>
+                <button type="button" className="btn" onClick={() => setIsNewReportModalOpen(false)} disabled={isSubmitting}>Batal</button>
+                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                  {isSubmitting ? 'Mengajukan...' : 'Ajukan Laporan'}
+                </button>
               </div>
             </form>
           </div>

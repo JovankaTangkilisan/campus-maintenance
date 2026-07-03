@@ -1,4 +1,4 @@
-import { RouteContext, Actor } from '../types';
+import type { RouteContext, Actor } from '../types';
 import { AppError } from './error';
 
 const VALID_ROLES = ['Pelapor', 'Administrator', 'Teknisi', 'Manajer Fasilitas'] as const;
