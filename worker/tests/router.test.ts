@@ -80,6 +80,71 @@ const mockEnv = {
 
 const mockCtx = {} as ExecutionContext;
 
+type QueryLog = {
+  sql: string;
+  args: any[];
+};
+
+function createListMockDb(options?: {
+  totalItems?: number;
+  rows?: any[];
+}) {
+  const queries: QueryLog[] = [];
+
+  const db = {
+    prepare: (sql: string) => {
+      let boundArgs: any[] = [];
+      const stmt = {
+        bind: (...args: any[]) => {
+          boundArgs = args;
+          return stmt;
+        },
+        run: async () => {
+          queries.push({ sql, args: boundArgs });
+          return {
+            success: true,
+            meta: { last_row_id: 999 }
+          };
+        },
+        first: async () => {
+          queries.push({ sql, args: boundArgs });
+          if (sql.includes('COUNT(*) as total_items')) {
+            return {
+              total_items: options?.totalItems ?? 1
+            };
+          }
+
+          return null;
+        },
+        all: async () => {
+          queries.push({ sql, args: boundArgs });
+          return {
+            success: true,
+            results: options?.rows ?? [
+              {
+                id: 101,
+                title: 'AC Mati di Lab Komputer',
+                description: 'AC tidak menyala sejak pagi.',
+                location: 'Gedung D, Lantai 2',
+                category: 'AC & Pendingin Ruangan',
+                priority: 'high',
+                status: 'baru',
+                created_by: 'pelapor-1',
+                created_at: '2026-07-03 09:00:00',
+                updated_at: '2026-07-03 09:00:00',
+                assigned_technician_id: 'teknisi-1'
+              }
+            ]
+          };
+        }
+      };
+      return stmt;
+    }
+  } as unknown as D1Database;
+
+  return { db, queries };
+}
+
 describe('Router & Middleware Tests', () => {
 
   it('GET /api/ping - rute publik harus mengembalikan status 200', async () => {
@@ -320,5 +385,131 @@ describe('POST /api/reports - Create Service Request Features', () => {
     const body: any = await response.json();
     expect(body.error).toBe('FORBIDDEN');
     expect(body.message).toContain('Access denied. You do not own this service request');
+  });
+});
+
+describe('GET /api/reports - Role-aware list features', () => {
+  it('GET /api/reports - Pelapor hanya melihat laporan miliknya melalui clause reporter_id/created_by', async () => {
+    const { db, queries } = createListMockDb();
+    const env = {
+      DB: db,
+      ATTACHMENTS: mockR2
+    } as Env;
+
+    const request = new Request('http://localhost/api/reports?page=1&page_size=10', {
+      method: 'GET',
+      headers: {
+        'x-actor-id': 'pelapor-1',
+        'x-actor-name': 'Fajar Ramadhan',
+        'x-actor-role': 'Pelapor'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.total_items).toBe(1);
+    expect(body.items[0].report_code).toBe('CM-101');
+    expect(body.items[0].created_by).toBe('pelapor-1');
+
+    const selectQuery = queries.find(q => q.sql.includes('FROM service_requests sr') && q.sql.includes('ORDER BY'));
+    expect(selectQuery?.sql).toContain('sr.created_by = ?');
+    expect(selectQuery?.sql).not.toContain('EXISTS (SELECT 1 FROM service_request_assignments');
+    expect(selectQuery?.args[0]).toBe('pelapor-1');
+  });
+
+  it('GET /api/reports - Administrator dapat melihat seluruh laporan dan status baru diurutkan dari tanggal terbaru', async () => {
+    const { db, queries } = createListMockDb({
+      totalItems: 2,
+      rows: [
+        {
+          id: 202,
+          title: 'Lampu Koridor Padam',
+          description: 'Lampu mati total.',
+          location: 'Gedung B, Lantai 1',
+          category: 'Kelistrikan & Penerangan',
+          priority: 'low',
+          status: 'baru',
+          created_by: 'pelapor-2',
+          created_at: '2026-07-03 11:00:00',
+          updated_at: '2026-07-03 11:00:00',
+          assigned_technician_id: null
+        },
+        {
+          id: 201,
+          title: 'Proyektor Buram',
+          description: 'Gambar tidak fokus.',
+          location: 'Gedung A, Lantai 2',
+          category: 'Alat Presentasi/Proyektor',
+          priority: 'medium',
+          status: 'baru',
+          created_by: 'pelapor-3',
+          created_at: '2026-07-03 10:00:00',
+          updated_at: '2026-07-03 10:00:00',
+          assigned_technician_id: null
+        }
+      ]
+    });
+    const env = {
+      DB: db,
+      ATTACHMENTS: mockR2
+    } as Env;
+
+    const request = new Request('http://localhost/api/reports?status=baru&sort=created_at_desc&page=1&page_size=20', {
+      method: 'GET',
+      headers: {
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(body.total_items).toBe(2);
+    expect(body.items[0].report_code).toBe('CM-202');
+    expect(body.items[0].status).toBe('baru');
+
+    const countQuery = queries.find(q => q.sql.includes('COUNT(*) as total_items'));
+    const selectQuery = queries.find(q => q.sql.includes('FROM service_requests sr') && q.sql.includes('ORDER BY'));
+
+    expect(countQuery?.sql).not.toContain('created_by = ?');
+    expect(countQuery?.sql).not.toContain('EXISTS (SELECT 1 FROM service_request_assignments');
+    expect(selectQuery?.sql).toContain('sr.status = ?');
+    expect(selectQuery?.sql).toContain('ORDER BY sr.created_at DESC, sr.id DESC');
+    expect(selectQuery?.args).toContain('baru');
+  });
+
+  it('GET /api/reports - Teknisi hanya melihat laporan yang ditugaskan kepadanya melalui EXISTS assignment', async () => {
+    const { db, queries } = createListMockDb();
+    const env = {
+      DB: db,
+      ATTACHMENTS: mockR2
+    } as Env;
+
+    const request = new Request('http://localhost/api/reports?sort=created_at_asc', {
+      method: 'GET',
+      headers: {
+        'x-actor-id': 'teknisi-1',
+        'x-actor-name': 'Budi Santoso',
+        'x-actor-role': 'Teknisi'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(body.items[0].assigned_technician_id).toBe('teknisi-1');
+
+    const selectQuery = queries.find(q => q.sql.includes('FROM service_requests sr') && q.sql.includes('ORDER BY'));
+    expect(selectQuery?.sql).toContain('EXISTS (SELECT 1 FROM service_request_assignments a WHERE a.service_request_id = sr.id AND a.technician_id = ?');
+    expect(selectQuery?.sql).not.toContain('sr.created_by = ?');
+    expect(selectQuery?.sql).toContain('ORDER BY sr.created_at ASC, sr.id ASC');
+    expect(selectQuery?.args[0]).toBe('teknisi-1');
   });
 });

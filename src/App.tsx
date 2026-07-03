@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import './App.css';
 
 // --- INTERFACES ---
@@ -33,6 +33,18 @@ interface Report {
   attachments?: any[];
 }
 
+interface ReportListItem {
+  reportCode: string;
+  title: string;
+  location: string;
+  category: string;
+  priority: string;
+  status: string;
+  createdAt: string;
+  createdBy?: string;
+  assignedTechnicianId?: string | null;
+}
+
 // --- MOCK CONSTANTS ---
 const CATEGORIES = [
   'AC & Pendingin Ruangan',
@@ -51,6 +63,74 @@ const TECHNICIANS = [
   { name: 'Joko Susilo', specialty: 'IT & Jaringan' },
   { name: 'Slamet Riyadi', specialty: 'Kebersihan & Mekanikal' }
 ];
+
+const ROLE_SESSION_MAP = {
+  pelapor: { actorId: 'pelapor-1', actorName: 'Fajar Ramadhan (Asisten Lab)', actorRole: 'Pelapor' },
+  admin: { actorId: 'admin-1', actorName: 'Administrator', actorRole: 'Administrator' },
+  teknisi: { actorId: 'teknisi-1', actorName: 'Budi Santoso', actorRole: 'Teknisi' },
+  manajer: { actorId: 'manajer-1', actorName: 'Facility Manager', actorRole: 'Manajer Fasilitas' }
+} as const;
+
+function getSessionForRole(role: keyof typeof ROLE_SESSION_MAP) {
+  return ROLE_SESSION_MAP[role];
+}
+
+function toStatusLabel(status: string) {
+  const normalized = status.toLowerCase();
+  const statusMap: Record<string, string> = {
+    baru: 'Baru',
+    diperiksa: 'Diperiksa',
+    ditolak: 'Ditolak',
+    ditugaskan: 'Ditugaskan',
+    diterima: 'Diterima',
+    sedang_dikerjakan: 'Sedang Dikerjakan',
+    selesai_dikerjakan: 'Selesai Dikerjakan',
+    ditutup: 'Ditutup',
+    dibuka_kembali: 'Dibuka Kembali'
+  };
+
+  return statusMap[normalized] || status;
+}
+
+function toPriorityLabel(priority: string) {
+  const normalized = priority.toLowerCase();
+  const priorityMap: Record<string, string> = {
+    low: 'Rendah',
+    medium: 'Sedang',
+    high: 'Tinggi',
+    urgent: 'Mendesak'
+  };
+
+  return priorityMap[normalized] || priority;
+}
+
+function normalizeLocalReport(report: Report): ReportListItem {
+  return {
+    reportCode: report.id,
+    title: report.title,
+    location: report.location,
+    category: report.category,
+    priority: report.priority ? toPriorityLabel(report.priority) : '',
+    status: report.status,
+    createdAt: report.dateCreated,
+    createdBy: report.reporterId,
+    assignedTechnicianId: null
+  };
+}
+
+function normalizeApiReport(report: any): ReportListItem {
+  return {
+    reportCode: report.report_code || `CM-${report.id}`,
+    title: report.issue_type || report.title || 'Tanpa judul',
+    location: report.location || '-',
+    category: report.category || '',
+    priority: report.priority ? toPriorityLabel(report.priority) : '',
+    status: toStatusLabel(report.status || ''),
+    createdAt: report.created_at || '',
+    createdBy: report.created_by,
+    assignedTechnicianId: report.assigned_technician_id ?? null
+  };
+}
 
 const INITIAL_REPORTS: Report[] = [
   {
@@ -225,6 +305,10 @@ export default function App() {
   // --- APPLICATION STATE ---
   const [reports, setReports] = useState<Report[]>(INITIAL_REPORTS);
   const [activeRole, setActiveRole] = useState<'pelapor' | 'admin' | 'teknisi' | 'manajer'>('pelapor');
+  const [listReports, setListReports] = useState<ReportListItem[]>([]);
+  const [listLoading, setListLoading] = useState(true);
+  const [listError, setListError] = useState('');
+  const [listRefreshToken, setListRefreshToken] = useState(0);
   
   // Selection
   const [selectedReportId, setSelectedReportId] = useState<string>('CM-101');
@@ -251,6 +335,10 @@ export default function App() {
   const [statusFilter, setStatusFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
   
   // Comment Box input state
   const [commentInput, setCommentInput] = useState('');
@@ -265,6 +353,89 @@ export default function App() {
   const selectedReport = useMemo(() => {
     return reports.find(r => r.id === selectedReportId) || reports[0];
   }, [reports, selectedReportId]);
+
+  const activeSession = getSessionForRole(activeRole);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const loadReports = async () => {
+      setListLoading(true);
+      setListError('');
+
+      try {
+        const params = new URLSearchParams();
+        if (statusFilter) params.set('status', statusFilter.toLowerCase().replace(/\s+/g, '_'));
+        
+        // Map priority filter to backend formats ('low', 'medium', 'high', 'urgent')
+        if (priorityFilter) {
+          const priorityFilterMap: Record<string, string> = {
+            'rendah': 'low',
+            'sedang': 'medium',
+            'tinggi': 'high',
+            'mendesak': 'urgent'
+          };
+          const mappedPriority = priorityFilterMap[priorityFilter.toLowerCase()] || priorityFilter.toLowerCase();
+          params.set('priority', mappedPriority);
+        }
+
+        if (categoryFilter) params.set('category', categoryFilter);
+        if (searchQuery.trim()) params.set('search', searchQuery.trim());
+        params.set('sort', 'created_at_desc');
+        params.set('page', String(currentPage));
+        params.set('page_size', String(pageSize));
+
+        const response = await fetch(`/api/reports?${params.toString()}`, {
+          method: 'GET',
+          signal: controller.signal,
+          headers: {
+            'x-actor-id': activeSession.actorId,
+            'x-actor-name': activeSession.actorName,
+            'x-actor-role': activeSession.actorRole
+          }
+        });
+
+        const data: any = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || 'Gagal memuat daftar laporan.');
+        }
+
+        const items = data.items || [];
+        const uiReports = items.map((item: any) => mapDbReportToUi(item, item.created_by === 'pelapor-1' ? 'Fajar Ramadhan (Asisten Lab)' : item.created_by));
+        
+        setReports(uiReports);
+        setListReports(items.map(normalizeApiReport));
+        setCurrentPage(data.page || currentPage);
+        setTotalPages(data.total_pages || 1);
+        setTotalItems(data.total_items || 0);
+      } catch (error: any) {
+        if (error.name === 'AbortError') {
+          return;
+        }
+
+        setListError(error.message || 'Gagal memuat daftar laporan.');
+        setListReports([]);
+        setReports([]);
+      } finally {
+        if (!controller.signal.aborted) {
+          setListLoading(false);
+        }
+      }
+    };
+
+    loadReports();
+
+    return () => {
+      controller.abort();
+    };
+  }, [activeRole, activeSession.actorId, activeSession.actorName, activeSession.actorRole, categoryFilter, currentPage, listRefreshToken, pageSize, priorityFilter, searchQuery, statusFilter]);
+
+  useEffect(() => {
+    if (listReports.length > 0 && !listReports.some(report => report.reportCode === selectedReportId)) {
+      setSelectedReportId(listReports[0].reportCode);
+    }
+  }, [listReports, selectedReportId]);
 
   // --- ACTIONS & MUTATIONS ---
   const getCurrentTimestamp = () => {
@@ -334,34 +505,16 @@ export default function App() {
     setIsSubmitting(true);
     setSubmitError('');
     setSubmitSuccess(false);
-
-    // Map activeRole to mock headers
-    let roleHeader = 'Pelapor';
-    let actorId = 'pelapor-1';
-    let actorName = 'Fajar Ramadhan (Asisten Lab)';
-
-    if (activeRole === 'admin') {
-      roleHeader = 'Administrator';
-      actorId = 'admin-1';
-      actorName = 'Administrator';
-    } else if (activeRole === 'teknisi') {
-      roleHeader = 'Teknisi';
-      actorId = 'teknisi-1';
-      actorName = 'Budi Santoso';
-    } else if (activeRole === 'manajer') {
-      roleHeader = 'Manajer Fasilitas';
-      actorId = 'manajer-1';
-      actorName = 'Facility Manager';
-    }
+    const session = activeSession;
 
     try {
       const response = await fetch('/api/reports', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-actor-id': actorId,
-          'x-actor-name': actorName,
-          'x-actor-role': roleHeader
+          'x-actor-id': session.actorId,
+          'x-actor-name': session.actorName,
+          'x-actor-role': session.actorRole
         },
         body: JSON.stringify({
           title: newTitle,
@@ -387,9 +540,9 @@ export default function App() {
         const attachResponse = await fetch(`/api/reports/${data.report.id}/attachments`, {
           method: 'POST',
           headers: {
-            'x-actor-id': actorId,
-            'x-actor-name': actorName,
-            'x-actor-role': roleHeader
+            'x-actor-id': session.actorId,
+            'x-actor-name': session.actorName,
+            'x-actor-role': session.actorRole
           },
           body: formData
         });
@@ -405,9 +558,11 @@ export default function App() {
 
       setSubmitSuccess(true);
 
-      const newUiReport = mapDbReportToUi(finalReport, actorName);
-      setReports([newUiReport, ...reports]);
+      const newUiReport = mapDbReportToUi(finalReport, session.actorName);
+      setReports(prev => [newUiReport, ...prev]);
       setSelectedReportId(newUiReport.id);
+      setCurrentPage(1);
+      setListRefreshToken(token => token + 1);
 
       // Reset form dan tutup modal setelah jeda 1.5 detik
       setTimeout(() => {
@@ -615,11 +770,11 @@ export default function App() {
     return reports.filter(r => {
       // Role scope filter
       if (activeRole === 'pelapor') {
-        // In reality, only show reports where reporterId matches.
-        // For a beautiful demo, let them see all, but mock their ID on actions.
+        if (r.reporterId !== activeSession.actorId) {
+          return false;
+        }
       } else if (activeRole === 'teknisi') {
-        // Only show jobs assigned to selected technician, OR jobs that are newly assigned.
-        if (r.technician !== selectedTechnicianName && r.status !== 'Baru') {
+        if (r.technician !== selectedTechnicianName) {
           return false;
         }
       }
@@ -645,7 +800,16 @@ export default function App() {
       
       return true;
     });
-  }, [reports, activeRole, selectedTechnicianName, searchQuery, statusFilter, priorityFilter, categoryFilter]);
+  }, [reports, activeRole, activeSession.actorId, selectedTechnicianName, searchQuery, statusFilter, priorityFilter, categoryFilter]);
+
+  const displayReports = useMemo(() => {
+    return listError ? filteredReports.map(normalizeLocalReport) : listReports;
+  }, [filteredReports, listError, listReports]);
+
+  const visibleTotalItems = listError ? filteredReports.length : totalItems;
+  const displayTotalPages = listError
+    ? (visibleTotalItems > 0 ? Math.ceil(visibleTotalItems / pageSize) : 0)
+    : totalPages;
 
   // --- MANAGER ANALYTICS STATS ---
   const stats = useMemo(() => {
@@ -723,7 +887,7 @@ export default function App() {
             
             <button 
               className={`role-btn ${activeRole === 'pelapor' ? 'active' : ''}`}
-              onClick={() => { setActiveRole('pelapor'); setStatusFilter(''); }}
+              onClick={() => { setActiveRole('pelapor'); setStatusFilter(''); setCurrentPage(1); }}
             >
               <span className="role-name">Pelapor</span>
               <span className="role-desc">Mahasiswa / Dosen. Buat laporan & konfirmasi perbaikan.</span>
@@ -731,7 +895,7 @@ export default function App() {
             
             <button 
               className={`role-btn ${activeRole === 'admin' ? 'active' : ''}`}
-              onClick={() => { setActiveRole('admin'); setStatusFilter(''); }}
+              onClick={() => { setActiveRole('admin'); setStatusFilter(''); setCurrentPage(1); }}
             >
               <span className="role-name">Administrator</span>
               <span className="role-desc">Pusat Layanan Fasilitas. Kelola status, kategori, prioritas, & teknisi.</span>
@@ -739,7 +903,7 @@ export default function App() {
             
             <button 
               className={`role-btn ${activeRole === 'teknisi' ? 'active' : ''}`}
-              onClick={() => { setActiveRole('teknisi'); setStatusFilter(''); }}
+              onClick={() => { setActiveRole('teknisi'); setStatusFilter(''); setCurrentPage(1); }}
             >
               <span className="role-name">Teknisi</span>
               <span className="role-desc">Petugas Lapangan. Terima & kerjakan tugas perbaikan.</span>
@@ -747,7 +911,7 @@ export default function App() {
             
             <button 
               className={`role-btn ${activeRole === 'manajer' ? 'active' : ''}`}
-              onClick={() => { setActiveRole('manajer'); }}
+              onClick={() => { setActiveRole('manajer'); setCurrentPage(1); }}
             >
               <span className="role-name">Facility Manager</span>
               <span className="role-desc">Direktur Sarana Prasarana. Tinjau dashboard & tren penyelesaian.</span>
@@ -763,7 +927,7 @@ export default function App() {
             <select 
               className="filter-select"
               value={selectedTechnicianName}
-              onChange={(e) => setSelectedTechnicianName(e.target.value)}
+              onChange={(e) => { setSelectedTechnicianName(e.target.value); setCurrentPage(1); }}
               style={{ width: '200px' }}
             >
               {TECHNICIANS.map(t => (
@@ -902,7 +1066,7 @@ export default function App() {
                       </td>
                       <td style={{ padding: '10px 8px', fontSize: '0.85rem' }}>{r.location}</td>
                       <td style={{ padding: '10px 8px' }}>
-                        <span className={`badge badge-${r.status.toLowerCase().replace(' ', '-')}`}>
+                        <span className={`badge badge-${r.status.toLowerCase().replace(/\s+/g, '-')}`}>
                           {r.status}
                         </span>
                       </td>
@@ -948,35 +1112,35 @@ export default function App() {
               <div className="status-summary-bar">
                 <div 
                   className={`status-summary-card ${statusFilter === '' ? 'active' : ''}`}
-                  onClick={() => setStatusFilter('')}
+                  onClick={() => { setStatusFilter(''); setCurrentPage(1); }}
                 >
                   <span className="status-summary-num">{reports.length}</span>
                   <span className="status-summary-name">Semua</span>
                 </div>
                 <div 
                   className={`status-summary-card ${statusFilter === 'Baru' ? 'active' : ''}`}
-                  onClick={() => setStatusFilter('Baru')}
+                  onClick={() => { setStatusFilter('Baru'); setCurrentPage(1); }}
                 >
                   <span className="status-summary-num">{getStatusCount('Baru')}</span>
                   <span className="status-summary-name">Baru</span>
                 </div>
                 <div 
                   className={`status-summary-card ${statusFilter === 'Diperiksa' ? 'active' : ''}`}
-                  onClick={() => setStatusFilter('Diperiksa')}
+                  onClick={() => { setStatusFilter('Diperiksa'); setCurrentPage(1); }}
                 >
                   <span className="status-summary-num">{getStatusCount('Diperiksa')}</span>
                   <span className="status-summary-name">Check</span>
                 </div>
                 <div 
                   className={`status-summary-card ${statusFilter === 'Ditugaskan' ? 'active' : ''}`}
-                  onClick={() => setStatusFilter('Ditugaskan')}
+                  onClick={() => { setStatusFilter('Ditugaskan'); setCurrentPage(1); }}
                 >
                   <span className="status-summary-num">{getStatusCount('Ditugaskan')}</span>
                   <span className="status-summary-name">Tugas</span>
                 </div>
                 <div 
                   className={`status-summary-card ${statusFilter === 'Selesai Dikerjakan' ? 'active' : ''}`}
-                  onClick={() => setStatusFilter('Selesai Dikerjakan')}
+                  onClick={() => { setStatusFilter('Selesai Dikerjakan'); setCurrentPage(1); }}
                 >
                   <span className="status-summary-num">{getStatusCount('Selesai Dikerjakan')}</span>
                   <span className="status-summary-name">Selesai</span>
@@ -992,7 +1156,7 @@ export default function App() {
                   placeholder="Cari kata kunci, lokasi, ID..." 
                   className="search-input"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
                 />
                 <span className="search-icon-svg">
                   <Icons.Search />
@@ -1003,7 +1167,7 @@ export default function App() {
                 <select 
                   className="filter-select"
                   value={priorityFilter}
-                  onChange={(e) => setPriorityFilter(e.target.value)}
+                  onChange={(e) => { setPriorityFilter(e.target.value); setCurrentPage(1); }}
                 >
                   <option value="">Semua Prioritas</option>
                   <option value="Rendah">Rendah</option>
@@ -1015,7 +1179,7 @@ export default function App() {
                 <select 
                   className="filter-select"
                   value={categoryFilter}
-                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  onChange={(e) => { setCategoryFilter(e.target.value); setCurrentPage(1); }}
                 >
                   <option value="">Semua Kategori</option>
                   {CATEGORIES.map(c => (
@@ -1026,26 +1190,37 @@ export default function App() {
             </div>
 
             {/* List */}
+            {listError && displayReports.length > 0 && (
+              <div style={{ marginBottom: '12px', padding: '10px 12px', borderRadius: '8px', background: 'var(--color-warning-light)', color: 'var(--color-warning-hover)', border: '1px solid var(--color-warning)' }}>
+                Backend daftar belum tersedia, jadi tampilan memakai data demo lokal sementara.
+              </div>
+            )}
             <div className="report-list">
-              {filteredReports.length === 0 ? (
+              {listLoading && displayReports.length === 0 ? (
+                <div className="empty-state">
+                  <span className="empty-icon"><Icons.Alert /></span>
+                  <p>Memuat daftar laporan...</p>
+                  <p style={{ fontSize: '0.75rem' }}>Mohon tunggu sebentar.</p>
+                </div>
+              ) : displayReports.length === 0 ? (
                 <div className="empty-state">
                   <span className="empty-icon"><Icons.Alert /></span>
                   <p>Tidak ada laporan ditemukan</p>
                   <p style={{ fontSize: '0.75rem' }}>Coba ubah kata kunci pencarian atau filter Anda.</p>
                 </div>
               ) : (
-                filteredReports.map(r => (
+                displayReports.map(r => (
                   <div 
-                    key={r.id} 
-                    className={`report-card ${selectedReportId === r.id ? 'selected' : ''}`}
+                    key={r.reportCode} 
+                    className={`report-card ${selectedReportId === r.reportCode ? 'selected' : ''}`}
                     onClick={() => {
-                      setSelectedReportId(r.id);
+                      setSelectedReportId(r.reportCode);
                       setActiveDetailTab('detail');
                     }}
                   >
                     <div className="report-card-top">
-                      <span className="report-id">{r.id}</span>
-                      <span className={`badge badge-${r.status.toLowerCase().replace(' ', '-')}`}>
+                      <span className="report-id">{r.reportCode}</span>
+                      <span className={`badge badge-${r.status.toLowerCase().replace(/\s+/g, '-')}`}>
                         {r.status}
                       </span>
                     </div>
@@ -1059,7 +1234,7 @@ export default function App() {
                       </div>
                       <div className="meta-item">
                         <span className="meta-icon"><Icons.Clock /></span>
-                        <span>{r.dateCreated.split(' ')[0]}</span>
+                        <span>{r.createdAt.split(' ')[0]}</span>
                       </div>
                     </div>
 
@@ -1077,6 +1252,41 @@ export default function App() {
                 ))
               )}
             </div>
+            {displayTotalPages > 1 && (
+              <div className="pagination-bar">
+                <button
+                  className="btn btn-sm"
+                  onClick={() => setCurrentPage(page => Math.max(1, page - 1))}
+                  disabled={currentPage === 1}
+                >
+                  Sebelumnya
+                </button>
+                <span className="pagination-meta">
+                  Halaman {currentPage} dari {displayTotalPages} · {visibleTotalItems} laporan
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <label className="pagination-label" htmlFor="page-size-select">Tampilkan</label>
+                  <select
+                    id="page-size-select"
+                    className="filter-select"
+                    value={pageSize}
+                    onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                    style={{ width: '88px' }}
+                  >
+                    <option value={5}>5</option>
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                  </select>
+                </div>
+                <button
+                  className="btn btn-sm"
+                  onClick={() => setCurrentPage(page => Math.min(displayTotalPages, page + 1))}
+                  disabled={currentPage >= displayTotalPages}
+                >
+                  Berikutnya
+                </button>
+              </div>
+            )}
           </div>
 
           {/* RIGHT VIEW: REPORT DETAILS */}
@@ -1090,7 +1300,7 @@ export default function App() {
               </div>
 
               <div className="detail-badges">
-                <span className={`badge badge-${selectedReport.status.toLowerCase().replace(' ', '-')}`}>
+                <span className={`badge badge-${selectedReport.status.toLowerCase().replace(/\s+/g, '-')}`}>
                   Status: {selectedReport.status}
                 </span>
                 
