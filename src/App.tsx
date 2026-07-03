@@ -915,27 +915,26 @@ export default function App() {
   };
 
   // UC-11: Konfirmasi Pelapor & Penutupan/Pembukaan Kembali (Admin)
-  const handleConfirmResult = (approve: boolean) => {
-    const timestamp = getCurrentTimestamp();
-    const actorName = activeRole === 'pelapor' ? 'Fajar Ramadhan (Asisten Lab)' : 'Administrator';
-    
-    setReports(prev => prev.map(r => {
-      if (r.id !== selectedReportId) return r;
-      
-      const newStatus = approve ? 'Ditutup' : 'Dibuka Kembali';
-      const note = approve 
-        ? 'Pelapor menyetujui hasil pekerjaan. Laporan ditutup.' 
-        : 'Pelapor tidak puas dengan hasil pekerjaan. Laporan dibuka kembali untuk ditugaskan ulang.';
-        
-      return {
-        ...r,
-        status: newStatus,
-        history: [
-          ...r.history,
-          { status: newStatus, actor: actorName, timestamp, notes: note }
-        ]
-      };
-    }));
+  const handleConfirmResult = async (approve: boolean) => {
+    if (!selectedReportId || !activeRole) return;
+
+    const session = getSessionForRole(activeRole);
+    const reportId = selectedReportId.replace('CM-', '');
+    const endpoint = approve ? 'close' : 'reopen';
+
+    try {
+      const res = await fetch(`/api/reports/${reportId}/${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'x-actor-id': session.actorId,
+          'x-actor-name': session.actorName,
+          'x-actor-role': session.actorRole
+        }
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(`Gagal: ${data.message}`); return; }
+      setListRefreshToken(t => t + 1);
+    } catch (err: any) { alert(`Gagal terhubung ke server: ${err.message}`); }
   };
 
   // --- FILTERS LOGIC ---

@@ -16,7 +16,9 @@ CREATE TABLE IF NOT EXISTS service_requests (
     rejection_reason TEXT,
     assigned_technician_id TEXT,
     started_at DATETIME,
-    completed_at DATETIME
+    completed_at DATETIME,
+    closed_at DATETIME,
+    reopened_at DATETIME
 );
 
 -- 2. Tabel Komentar: service_request_comments

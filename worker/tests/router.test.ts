@@ -1497,6 +1497,184 @@ describe('POST /api/reports/:reportId/progress/complete - Complete work', () => 
   });
 });
 
+function createCloseReopenMockDb(options?: {
+  report?: any;
+}) {
+  const queries: QueryLog[] = [];
+
+  const db = {
+    prepare: (sql: string) => {
+      let boundArgs: any[] = [];
+      const stmt = {
+        bind: (...args: any[]) => {
+          boundArgs = args;
+          return stmt;
+        },
+        run: async () => {
+          queries.push({ sql, args: boundArgs });
+          return { success: true, meta: { last_row_id: 666 } };
+        },
+        first: async () => {
+          queries.push({ sql, args: boundArgs });
+          if (options && 'report' in options) return options.report;
+          return { created_by: 'pelapor-1', status: 'selesai_dikerjakan' };
+        },
+        all: async () => {
+          queries.push({ sql, args: boundArgs });
+          return { success: true, results: [] };
+        }
+      };
+      return stmt;
+    }
+  } as unknown as D1Database;
+
+  return { db, queries };
+}
+
+describe('POST /api/reports/:reportId/close - Close report', () => {
+  it('Admin menutup laporan selesai_dikerjakan harus 200', async () => {
+    const { db, queries } = createCloseReopenMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/close', {
+      method: 'POST',
+      headers: {
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+    expect((await response.json()).success).toBe(true);
+
+    const updateQueries = queries.filter(q => q.sql.includes("status = 'ditutup'"));
+    expect(updateQueries.length).toBe(1);
+    expect(updateQueries[0].sql).toContain('closed_at');
+
+    const historyQueries = queries.filter(q => q.sql.includes('INSERT INTO service_request_status_history'));
+    expect(historyQueries.length).toBe(1);
+    expect(historyQueries[0].sql).toContain('ditutup');
+  });
+
+  it('Pelapor pemilik menutup laporan harus 200', async () => {
+    const { db } = createCloseReopenMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/close', {
+      method: 'POST',
+      headers: {
+        'x-actor-id': 'pelapor-1',
+        'x-actor-name': 'Fajar Ramadhan',
+        'x-actor-role': 'Pelapor'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+  });
+
+  it('Pelapor bukan pemilik harus 403', async () => {
+    const { db } = createCloseReopenMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/close', {
+      method: 'POST',
+      headers: {
+        'x-actor-id': 'pelapor-2',
+        'x-actor-name': 'Other User',
+        'x-actor-role': 'Pelapor'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(403);
+  });
+
+  it('Laporan bukan selesai_dikerjakan harus 409', async () => {
+    const { db } = createCloseReopenMockDb({ report: { id: 101, status: 'baru' } });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/close', {
+      method: 'POST',
+      headers: {
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toBe('CONFLICT');
+  });
+});
+
+describe('POST /api/reports/:reportId/reopen - Reopen report', () => {
+  it('Admin membuka kembali laporan selesai_dikerjakan harus 200', async () => {
+    const { db, queries } = createCloseReopenMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/reopen', {
+      method: 'POST',
+      headers: {
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+    expect((await response.json()).success).toBe(true);
+
+    const updateQueries = queries.filter(q => q.sql.includes("status = 'dibuka_kembali'"));
+    expect(updateQueries.length).toBe(1);
+    expect(updateQueries[0].sql).toContain('reopened_at');
+    expect(updateQueries[0].sql).toContain('assigned_technician_id = NULL');
+
+    const historyQueries = queries.filter(q => q.sql.includes('INSERT INTO service_request_status_history'));
+    expect(historyQueries.length).toBe(1);
+    expect(historyQueries[0].sql).toContain('dibuka_kembali');
+  });
+
+  it('Pelapor tidak bisa reopen harus 403', async () => {
+    const { db } = createCloseReopenMockDb();
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/reopen', {
+      method: 'POST',
+      headers: {
+        'x-actor-id': 'pelapor-1',
+        'x-actor-name': 'Fajar Ramadhan',
+        'x-actor-role': 'Pelapor'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(403);
+  });
+
+  it('Laporan bukan selesai_dikerjakan harus 409', async () => {
+    const { db } = createCloseReopenMockDb({ report: { status: 'ditutup' } });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/reports/101/reopen', {
+      method: 'POST',
+      headers: {
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toBe('CONFLICT');
+  });
+});
+
 function createAssignMockDb(options?: {
   report?: any;
   updatedReport?: any;

@@ -700,7 +700,76 @@ router.post('/api/reports/:reportId/progress/complete', mockAuth(['Teknisi']), a
   return Response.json({ success: true, message: 'Pekerjaan selesai.' });
 });
 
-// 19. Rute Detail Laporan (GET /api/reports/:reportId) - Semua peran dengan scope berbeda
+// 20. Rute Tutup Laporan (POST /api/reports/:reportId/close) - Administrator atau Pelapor pemilik
+router.post('/api/reports/:reportId/close', mockAuth(), async (_request, ctx) => {
+  const actor = ctx.actor!;
+  const reportId = ctx.params.reportId;
+
+  if (!/^\d+$/.test(reportId)) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Report ID must be a positive integer.');
+  }
+
+  // Validasi: hanya Admin atau Pelapor pemilik
+  if (actor.role !== 'Administrator') {
+    const report = await ctx.env.DB.prepare('SELECT created_by, status FROM service_requests WHERE id = ?')
+      .bind(reportId).first<any>();
+    if (!report) throw new AppError(404, 'NOT_FOUND', 'Service request not found.');
+    if (report.created_by !== actor.id) {
+      throw new AppError(403, 'FORBIDDEN', 'Access denied. You can only close your own reports.');
+    }
+    if (report.status !== 'selesai_dikerjakan') {
+      throw new AppError(409, 'CONFLICT', 'Only reports with status "selesai_dikerjakan" can be closed.');
+    }
+  } else {
+    // Admin: langsung cek status
+    const report = await ctx.env.DB.prepare('SELECT status FROM service_requests WHERE id = ?')
+      .bind(reportId).first<any>();
+    if (!report) throw new AppError(404, 'NOT_FOUND', 'Service request not found.');
+    if (report.status !== 'selesai_dikerjakan') {
+      throw new AppError(409, 'CONFLICT', 'Only reports with status "selesai_dikerjakan" can be closed.');
+    }
+  }
+
+  await ctx.env.DB.prepare(
+    `UPDATE service_requests SET status = 'ditutup', closed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+  ).bind(reportId).run();
+
+  await ctx.env.DB.prepare(
+    `INSERT INTO service_request_status_history (service_request_id, old_status, new_status, actor_id, actor_role, notes) VALUES (?, 'selesai_dikerjakan', 'ditutup', ?, ?, 'Laporan ditutup.')`
+  ).bind(reportId, actor.id, actor.role).run();
+
+  return Response.json({ success: true, message: 'Laporan ditutup.' });
+});
+
+// 21. Rute Buka Kembali Laporan (POST /api/reports/:reportId/reopen) - Khusus Administrator
+router.post('/api/reports/:reportId/reopen', mockAuth(['Administrator']), async (_request, ctx) => {
+  const actor = ctx.actor!;
+  const reportId = ctx.params.reportId;
+
+  if (!/^\d+$/.test(reportId)) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Report ID must be a positive integer.');
+  }
+
+  const report = await ctx.env.DB.prepare('SELECT status FROM service_requests WHERE id = ?')
+    .bind(reportId).first<any>();
+  if (!report) throw new AppError(404, 'NOT_FOUND', 'Service request not found.');
+  if (report.status !== 'selesai_dikerjakan') {
+    throw new AppError(409, 'CONFLICT', 'Only reports with status "selesai_dikerjakan" can be reopened.');
+  }
+
+  // Kembalikan ke alur penugasan: status = dibuka_kembali, hapus assigned_technician_id
+  await ctx.env.DB.prepare(
+    `UPDATE service_requests SET status = 'dibuka_kembali', reopened_at = CURRENT_TIMESTAMP, assigned_technician_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+  ).bind(reportId).run();
+
+  await ctx.env.DB.prepare(
+    `INSERT INTO service_request_status_history (service_request_id, old_status, new_status, actor_id, actor_role, notes) VALUES (?, 'selesai_dikerjakan', 'dibuka_kembali', ?, ?, 'Laporan dibuka kembali untuk ditugaskan ulang.')`
+  ).bind(reportId, actor.id, actor.role).run();
+
+  return Response.json({ success: true, message: 'Laporan dibuka kembali.' });
+});
+
+// 22. Rute Detail Laporan (GET /api/reports/:reportId) - Semua peran dengan scope berbeda
 router.get('/api/reports/:reportId', mockAuth(), async (_request, ctx) => {
   const actor = ctx.actor!;
   const reportId = ctx.params.reportId;
