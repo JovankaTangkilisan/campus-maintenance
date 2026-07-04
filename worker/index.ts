@@ -1060,11 +1060,11 @@ router.get('/api/dashboard', mockAuth(['Administrator', 'Manajer Fasilitas']), a
     `SELECT COALESCE(category, 'Belum Ditentukan') as category, COUNT(*) as count FROM service_requests GROUP BY category ORDER BY category`
   ).all<any>();
 
-  // 8. Rata-rata waktu penyelesaian (dalam jam) untuk laporan yang sudah ditutup
+  // 8. Rata-rata waktu penyelesaian (dalam jam) dari dibuat hingga ditutup
   const avgRow = await ctx.env.DB.prepare(
-    `SELECT AVG((julianday(completed_at) - julianday(created_at)) * 24) as avg_hours
+    `SELECT AVG((julianday(closed_at) - julianday(created_at)) * 24) as avg_hours
      FROM service_requests
-     WHERE completed_at IS NOT NULL AND created_at IS NOT NULL`
+     WHERE closed_at IS NOT NULL AND created_at IS NOT NULL`
   ).first<any>();
 
   const statusMap: Record<string, number> = {};

@@ -809,7 +809,7 @@ export default function App() {
     const session = getSessionForRole(activeRole);
 
     try {
-      const response = await fetch(`/api/reports/${selectedReportId}/comments`, {
+      const response = await fetch(`/api/reports/${selectedReportId.replace('CM-', '')}/comments`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -841,7 +841,7 @@ export default function App() {
         return { ...r, comments: [...r.comments, newComment] };
       }));
 
-      if (detailReport && detailReport.report?.id === selectedReportId) {
+      if (detailReport && `CM-${detailReport.report?.id}` === selectedReportId) {
         setDetailReport(prev => {
           if (!prev || !prev.report) return prev;
           return {

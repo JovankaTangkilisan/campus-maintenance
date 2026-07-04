@@ -1924,7 +1924,6 @@ function createCommentsMockDb(options?: {
   createdComment?: any;
 }) {
   const queries: QueryLog[] = [];
-  let runStep = 0;
 
   const db = {
     prepare: (sql: string) => {
@@ -1936,7 +1935,6 @@ function createCommentsMockDb(options?: {
         },
         run: async () => {
           queries.push({ sql, args: boundArgs });
-          runStep++;
           return { success: true, meta: { last_row_id: 777 } };
         },
         first: async () => {
@@ -2303,7 +2301,7 @@ describe('GET /api/dashboard - Dashboard statistics', () => {
 
     const avgQuery = queries.find(q => q.sql.includes('AVG'));
     expect(avgQuery).toBeDefined();
-    expect(avgQuery?.sql).toContain('julianday(completed_at)');
+    expect(avgQuery?.sql).toContain('julianday(closed_at)');
     expect(avgQuery?.sql).toContain('julianday(created_at)');
   });
 
@@ -2416,6 +2414,35 @@ describe('GET /api/dashboard - Dashboard statistics', () => {
     expect(Object.keys(body.dashboard.per_status).length).toBe(0);
     expect(Object.keys(body.dashboard.per_priority).length).toBe(0);
     expect(Object.keys(body.dashboard.per_category).length).toBe(0);
+  });
+
+  it('Semua 9 status workflow muncul di per_status', async () => {
+    const nineStatuses = {
+      baru: 1, diperiksa: 1, ditolak: 1, ditugaskan: 1,
+      diterima: 1, sedang_dikerjakan: 1, selesai_dikerjakan: 1,
+      ditutup: 1, dibuka_kembali: 1
+    };
+    const { db } = createDashboardMockDb({ perStatus: nineStatuses });
+    const env = { DB: db, ATTACHMENTS: mockR2 } as Env;
+
+    const request = new Request('http://localhost/api/dashboard', {
+      method: 'GET',
+      headers: {
+        'x-actor-id': 'admin-1',
+        'x-actor-name': 'Administrator',
+        'x-actor-role': 'Administrator'
+      }
+    });
+
+    const response = await router.handle(request, env, mockCtx);
+    expect(response.status).toBe(200);
+
+    const body: any = await response.json();
+    expect(Object.keys(body.dashboard.per_status).length).toBe(9);
+    expect(body.dashboard.per_status.baru).toBe(1);
+    expect(body.dashboard.per_status.dibuka_kembali).toBe(1);
+    expect(body.dashboard.per_status.sedang_dikerjakan).toBe(1);
+    expect(body.dashboard.per_status.selesai_dikerjakan).toBe(1);
   });
 });
 
