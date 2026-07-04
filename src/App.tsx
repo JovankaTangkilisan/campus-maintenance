@@ -903,7 +903,6 @@ export default function App() {
 
     // Sedang Dikerjakan / Selesai Dikerjakan via API
     const endpoint = nextStatus === 'Sedang Dikerjakan' ? 'start' : 'complete';
-    const oldStatus = nextStatus === 'Sedang Dikerjakan' ? 'diterima' : 'sedang_dikerjakan';
     try {
       const res = await fetch(`/api/reports/${reportId}/progress/${endpoint}`, {
         method: 'POST',
@@ -918,22 +917,22 @@ export default function App() {
       setListRefreshToken(t => t + 1);
     } catch (err: any) { alert(`Gagal terhubung ke server: ${err.message}`); }
   };
-    }));
-    
-    setRejectReason('');
-  };
 
   // UC-09: Menambahkan Komentar (via API)
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!commentInput.trim() || !selectedReportId || !activeRole) return;
 
+    const session = getSessionForRole(activeRole);
+
     try {
       const response = await fetch(`/api/reports/${selectedReportId}/comments`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...getSessionForRole(activeRole)
+          'x-actor-id': session.actorId,
+          'x-actor-name': session.actorName,
+          'x-actor-role': session.actorRole
         },
         body: JSON.stringify({ comment: commentInput.trim() })
       });
