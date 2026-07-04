@@ -81,13 +81,19 @@ router.get('/api/admin-only', mockAuth(['Administrator']), async (_request, ctx)
   });
 });
 
-// 5. Rute untuk menguji AppError (Validation/Business Error)
-router.get('/api/error-app', async () => {
+// 5. Rute untuk menguji AppError (Validation/Business Error) - hanya development
+router.get('/api/error-app', async (_request, ctx) => {
+  if (ctx.env.ENV !== 'development') {
+    throw new AppError(404, 'NOT_FOUND', 'Endpoint not found.');
+  }
   throw new AppError(400, 'VALIDATION_ERROR', 'Input validation failed. Title is required.');
 });
 
-// 6. Rute untuk menguji Runtime Exception (Internal Server Error)
-router.get('/api/error-runtime', async () => {
+// 6. Rute untuk menguji Runtime Exception (Internal Server Error) - hanya development
+router.get('/api/error-runtime', async (_request, ctx) => {
+  if (ctx.env.ENV !== 'development') {
+    throw new AppError(404, 'NOT_FOUND', 'Endpoint not found.');
+  }
   throw new Error('Database connection failed unexpectedly.');
 });
 
@@ -446,6 +452,64 @@ router.patch('/api/reports/:reportId/triage', mockAuth(['Administrator']), async
       created_at: updatedReport.created_at,
       updated_at: updatedReport.updated_at,
       rejection_reason: updatedReport.rejection_reason ?? null
+    }
+  });
+});
+
+// 11. Rute Perubahan Prioritas (PATCH /api/reports/:reportId/priority) - Khusus Administrator
+router.patch('/api/reports/:reportId/priority', mockAuth(['Administrator']), async (request, ctx) => {
+  const reportId = ctx.params.reportId;
+
+  if (!/^\d+$/.test(reportId)) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Report ID must be a positive integer.');
+  }
+
+  // 1. Ambil laporan
+  const report = await ctx.env.DB.prepare(
+    'SELECT id, priority FROM service_requests WHERE id = ?'
+  ).bind(reportId).first<any>();
+
+  if (!report) {
+    throw new AppError(404, 'NOT_FOUND', 'Service request not found.');
+  }
+
+  // 2. Parse body
+  let body: any;
+  try {
+    body = await request.json();
+  } catch (e) {
+    throw new AppError(400, 'BAD_REQUEST', 'Invalid JSON body.');
+  }
+
+  const { priority } = body;
+  if (!priority || !REPORT_PRIORITIES.includes(priority)) {
+    throw new AppError(400, 'VALIDATION_ERROR', `Priority must be one of: ${REPORT_PRIORITIES.join(', ')}.`);
+  }
+
+  // 3. Update prioritas
+  await ctx.env.DB.prepare(
+    `UPDATE service_requests SET priority = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+  ).bind(priority, reportId).run();
+
+  // 4. Ambil data terkini
+  const updatedReport = await ctx.env.DB.prepare(
+    `SELECT id, title, description, location, category, priority, status, created_by, created_at, updated_at FROM service_requests WHERE id = ?`
+  ).bind(reportId).first<any>();
+
+  return Response.json({
+    success: true,
+    report: {
+      id: updatedReport.id,
+      report_code: `CM-${updatedReport.id}`,
+      title: updatedReport.title,
+      description: updatedReport.description,
+      location: updatedReport.location,
+      category: updatedReport.category,
+      priority: updatedReport.priority,
+      status: updatedReport.status,
+      created_by: updatedReport.created_by,
+      created_at: updatedReport.created_at,
+      updated_at: updatedReport.updated_at
     }
   });
 });

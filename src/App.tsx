@@ -1,136 +1,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import './App.css';
-
-// --- INTERFACES ---
-interface HistoryEntry {
-  status: string;
-  actor: string;
-  timestamp: string;
-  notes?: string;
-}
-
-interface CommentEntry {
-  author: string;
-  role: string;
-  text: string;
-  timestamp: string;
-}
-
-interface Report {
-  id: string;
-  title: string;
-  description: string;
-  location: string;
-  category: string;
-  priority: 'Rendah' | 'Sedang' | 'Tinggi' | 'Mendesak' | '';
-  status: 'Baru' | 'Diperiksa' | 'Ditugaskan' | 'Diterima' | 'Sedang Dikerjakan' | 'Selesai Dikerjakan' | 'Ditutup' | 'Ditolak' | 'Dibuka Kembali';
-  reporter: string;
-  reporterId: string;
-  technician: string;
-  dateCreated: string;
-  history: HistoryEntry[];
-  comments: CommentEntry[];
-  attachments?: any[];
-}
-
-interface ReportListItem {
-  reportCode: string;
-  title: string;
-  location: string;
-  category: string;
-  priority: string;
-  status: string;
-  createdAt: string;
-  createdBy?: string;
-  assignedTechnicianId?: string | null;
-}
-
-// --- MOCK CONSTANTS ---
-const CATEGORIES = [
-  'AC & Pendingin Ruangan',
-  'Jaringan & Internet',
-  'Alat Presentasi/Proyektor',
-  'Furnitur/Mebel',
-  'Alat Laboratorium',
-  'Kebersihan & Sanitasi',
-  'Kelistrikan & Penerangan',
-  'Lain-lain'
-];
-
-const TECHNICIANS = [
-  { name: 'Budi Santoso', specialty: 'AC & Kelistrikan' },
-  { name: 'Andi Wijaya', specialty: 'Furnitur & Sipil' },
-  { name: 'Joko Susilo', specialty: 'IT & Jaringan' },
-  { name: 'Slamet Riyadi', specialty: 'Kebersihan & Mekanikal' }
-];
-
-const ROLE_SESSION_MAP = {
-  pelapor: { actorId: 'pelapor-1', actorName: 'Fajar Ramadhan (Asisten Lab)', actorRole: 'Pelapor' },
-  admin: { actorId: 'admin-1', actorName: 'Administrator', actorRole: 'Administrator' },
-  teknisi: { actorId: 'teknisi-1', actorName: 'Budi Santoso', actorRole: 'Teknisi' },
-  manajer: { actorId: 'manajer-1', actorName: 'Facility Manager', actorRole: 'Manajer Fasilitas' }
-} as const;
-
-function getSessionForRole(role: keyof typeof ROLE_SESSION_MAP) {
-  return ROLE_SESSION_MAP[role];
-}
-
-function toStatusLabel(status: string) {
-  const normalized = status.toLowerCase();
-  const statusMap: Record<string, string> = {
-    baru: 'Baru',
-    diperiksa: 'Diperiksa',
-    ditolak: 'Ditolak',
-    ditugaskan: 'Ditugaskan',
-    diterima: 'Diterima',
-    sedang_dikerjakan: 'Sedang Dikerjakan',
-    selesai_dikerjakan: 'Selesai Dikerjakan',
-    ditutup: 'Ditutup',
-    dibuka_kembali: 'Dibuka Kembali'
-  };
-
-  return statusMap[normalized] || status;
-}
-
-function toPriorityLabel(priority: string) {
-  const normalized = priority.toLowerCase();
-  const priorityMap: Record<string, string> = {
-    low: 'Rendah',
-    medium: 'Sedang',
-    high: 'Tinggi',
-    urgent: 'Mendesak'
-  };
-
-  return priorityMap[normalized] || priority;
-}
-
-function normalizeLocalReport(report: Report): ReportListItem {
-  return {
-    reportCode: report.id,
-    title: report.title,
-    location: report.location,
-    category: report.category,
-    priority: report.priority ? toPriorityLabel(report.priority) : '',
-    status: report.status,
-    createdAt: report.dateCreated,
-    createdBy: report.reporterId,
-    assignedTechnicianId: null
-  };
-}
-
-function normalizeApiReport(report: any): ReportListItem {
-  return {
-    reportCode: report.report_code || `CM-${report.id}`,
-    title: report.issue_type || report.title || 'Tanpa judul',
-    location: report.location || '-',
-    category: report.category || '',
-    priority: report.priority ? toPriorityLabel(report.priority) : '',
-    status: toStatusLabel(report.status || ''),
-    createdAt: report.created_at || '',
-    createdBy: report.created_by,
-    assignedTechnicianId: report.assigned_technician_id ?? null
-  };
-}
+import { useToast, ToastContainer } from './toast';
+import type { Report, ReportListItem } from './types';
+import { CATEGORIES, TECHNICIANS, ROLE_SESSION_MAP, NAME_TO_TECHNICIAN_ID, type ActiveRole } from './constants';
+import { getSessionForRole, toStatusLabel, toPriorityLabel, normalizeApiReport, getCurrentTimestamp, formatTimestamp } from './utils';
 
 const INITIAL_REPORTS: Report[] = [
   {
@@ -353,6 +226,9 @@ export default function App() {
   // Comment Box input state
   const [commentInput, setCommentInput] = useState('');
   
+  // Toast notifications
+  const { toasts, removeToast, success: toastSuccess, error: toastError, info: toastInfo, warning: toastWarning } = useToast();
+  
   // Admin Action Form states
   const [assignCategory, setAssignCategory] = useState('');
   const [assignPriority, setAssignPriority] = useState<'Rendah' | 'Sedang' | 'Tinggi' | 'Mendesak' | ''>('');
@@ -553,19 +429,6 @@ export default function App() {
     'teknisi-4': 'Slamet Riyadi'
   };
 
-  const NAME_TO_TECHNICIAN_ID: Record<string, string> = {
-    'Budi Santoso': 'teknisi-1',
-    'Andi Wijaya': 'teknisi-2',
-    'Joko Susilo': 'teknisi-3',
-    'Slamet Riyadi': 'teknisi-4'
-  };
-
-  const getCurrentTimestamp = () => {
-    const d = new Date();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  };
-
   // UC-01: Buat Laporan Baru (REST API)
   const mapDbReportToUi = (dbReport: any, authorName: string): Report => {
     const statusMap: Record<string, Report['status']> = {
@@ -731,7 +594,7 @@ export default function App() {
 
     // Validasi format file (hanya JPEG/PNG)
     if (file.type !== 'image/jpeg' && file.type !== 'image/png') {
-      alert('Hanya diperbolehkan mengunggah file gambar dengan format JPEG atau PNG!');
+      toastWarning('Hanya diperbolehkan mengunggah file gambar dengan format JPEG atau PNG!');
       e.target.value = ''; // Reset input
       setSelectedFile(null);
       return;
@@ -739,7 +602,7 @@ export default function App() {
 
     // Validasi batas ukuran file (5MB)
     if (file.size > 5 * 1024 * 1024) {
-      alert('Ukuran file tidak boleh melebihi batas maksimal 5MB!');
+      toastWarning('Ukuran file tidak boleh melebihi batas maksimal 5MB!');
       e.target.value = ''; // Reset input
       setSelectedFile(null);
       return;
@@ -786,7 +649,7 @@ export default function App() {
 
       const data = await response.json();
       if (!response.ok) {
-        alert(`Gagal: ${data.message || 'Terjadi kesalahan saat memproses laporan.'}`);
+        toastError(`Gagal: ${data.message || 'Terjadi kesalahan saat memproses laporan.'}`);
         return;
       }
 
@@ -796,26 +659,46 @@ export default function App() {
       setAssignPriority('');
       setRejectReason('');
     } catch (err: any) {
-      alert(`Gagal terhubung ke server: ${err.message}`);
+      toastError(`Gagal terhubung ke server: ${err.message}`);
     }
   };
 
-  // UC-06: Menentukan Prioritas
-  const handleSetPriority = () => {
-    if (!assignPriority) return;
-    const timestamp = getCurrentTimestamp();
-    setReports(prev => prev.map(r => {
-      if (r.id !== selectedReportId) return r;
-      
-      return {
-        ...r,
-        priority: assignPriority,
-        history: [
-          ...r.history,
-          { status: r.status, actor: 'Administrator', timestamp, notes: `Tingkat prioritas ditetapkan ke: ${assignPriority}` }
-        ]
-      };
-    }));
+  // UC-06: Menentukan Prioritas via API
+  const handleSetPriority = async () => {
+    if (!assignPriority || !selectedReportId || !activeRole) return;
+
+    const session = getSessionForRole(activeRole);
+    const uiToApiPriority: Record<string, string> = {
+      'Rendah': 'low',
+      'Sedang': 'medium',
+      'Tinggi': 'high',
+      'Mendesak': 'urgent'
+    };
+    const apiPriority = uiToApiPriority[assignPriority] || 'medium';
+
+    try {
+      const response = await fetch(`/api/reports/${selectedReportId.replace('CM-', '')}/priority`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-actor-id': session.actorId,
+          'x-actor-name': session.actorName,
+          'x-actor-role': session.actorRole
+        },
+        body: JSON.stringify({ priority: apiPriority })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        toastError(`Gagal: ${data.message || 'Terjadi kesalahan saat mengubah prioritas.'}`);
+        return;
+      }
+
+      setListRefreshToken(t => t + 1);
+      setAssignPriority('');
+    } catch (err: any) {
+      toastError(`Gagal terhubung ke server: ${err.message}`);
+    }
   };
 
   // UC-07: Menugaskan Teknisi via API
@@ -826,7 +709,7 @@ export default function App() {
     const technicianId = NAME_TO_TECHNICIAN_ID[assignTech];
 
     if (!technicianId) {
-      alert('Teknisi tidak dikenal.');
+      toastError('Teknisi tidak dikenal.');
       return;
     }
 
@@ -844,14 +727,14 @@ export default function App() {
 
       const data = await response.json();
       if (!response.ok) {
-        alert(`Gagal: ${data.message || 'Terjadi kesalahan saat menugaskan teknisi.'}`);
+        toastError(`Gagal: ${data.message || 'Terjadi kesalahan saat menugaskan teknisi.'}`);
         return;
       }
 
       setListRefreshToken(t => t + 1);
       setAssignTech('');
     } catch (err: any) {
-      alert(`Gagal terhubung ke server: ${err.message}`);
+      toastError(`Gagal terhubung ke server: ${err.message}`);
     }
   };
 
@@ -874,9 +757,9 @@ export default function App() {
           }
         });
         const data = await res.json();
-        if (!res.ok) { alert(`Gagal: ${data.message}`); return; }
+        if (!res.ok) { toastError(`Gagal: ${data.message}`); return; }
         setListRefreshToken(t => t + 1);
-      } catch (err: any) { alert(`Gagal terhubung ke server: ${err.message}`); }
+      } catch (err: any) { toastError(`Gagal terhubung ke server: ${err.message}`); }
       return;
     }
 
@@ -894,10 +777,10 @@ export default function App() {
           body: JSON.stringify({ rejection_reason: reason })
         });
         const data = await res.json();
-        if (!res.ok) { alert(`Gagal: ${data.message}`); return; }
+        if (!res.ok) { toastError(`Gagal: ${data.message}`); return; }
         setListRefreshToken(t => t + 1);
         setRejectReason('');
-      } catch (err: any) { alert(`Gagal terhubung ke server: ${err.message}`); }
+      } catch (err: any) { toastError(`Gagal terhubung ke server: ${err.message}`); }
       return;
     }
 
@@ -913,9 +796,9 @@ export default function App() {
         }
       });
       const data = await res.json();
-      if (!res.ok) { alert(`Gagal: ${data.message}`); return; }
+      if (!res.ok) { toastError(`Gagal: ${data.message}`); return; }
       setListRefreshToken(t => t + 1);
-    } catch (err: any) { alert(`Gagal terhubung ke server: ${err.message}`); }
+    } catch (err: any) { toastError(`Gagal terhubung ke server: ${err.message}`); }
   };
 
   // UC-09: Menambahkan Komentar (via API)
@@ -1001,9 +884,9 @@ export default function App() {
         }
       });
       const data = await res.json();
-      if (!res.ok) { alert(`Gagal: ${data.message}`); return; }
+      if (!res.ok) { toastError(`Gagal: ${data.message}`); return; }
       setListRefreshToken(t => t + 1);
-    } catch (err: any) { alert(`Gagal terhubung ke server: ${err.message}`); }
+    } catch (err: any) { toastError(`Gagal terhubung ke server: ${err.message}`); }
   };
 
   // --- FILTERS LOGIC ---
@@ -1105,6 +988,7 @@ export default function App() {
 
   return (
     <div className="app-container">
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
       
       {/* HEADER & ROLE SWITCHER */}
       <header className="header">

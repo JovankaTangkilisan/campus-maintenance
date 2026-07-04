@@ -1,73 +1,94 @@
-# React + TypeScript + Vite
+# Campus Maintenance - Service Request Management System
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Sistem manajemen permintaan layanan pemeliharaan kampus berbasis Cloudflare Workers + React.
 
-Currently, two official plugins are available:
+## Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Frontend:** React 19 + TypeScript + Vite
+- **Backend:** Cloudflare Workers + Custom Router
+- **Database:** Cloudflare D1 (SQLite)
+- **Storage:** Cloudflare R2 (file attachments)
+- **Styling:** Neo-Brutalism (bold borders, flat shadows)
 
-## React Compiler
+## Known Limitations
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Mock Authentication (Development Only)
 
-## Expanding the ESLint configuration
+Autentikasi saat ini menggunakan mock header (`x-actor-id`, `x-actor-name`, `x-actor-role`). Ini hanya untuk development dan testing.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+**Keterbatasan:**
+- Tidak ada keamanan nyata — klien bisa memerankan role apa pun
+- Tidak ada session management
+- Tidak ada password/token
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+**Yang diperlukan untuk produksi:**
+- Integrasi dengan identity provider (OAuth, JWT, dll)
+- Server-side session atau token validation
+- Rate limiting dan CSRF protection
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## Development
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+# Install dependencies
+npm install
+
+# Run frontend dev server
+npm run dev
+
+# Run backend worker locally
+npm run dev:worker
+
+# Run tests
+npm test
+
+# Type check
+npx tsc --noEmit
+
+# Lint
+npx eslint src/
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## API Endpoints
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | /api/ping | Public | Health check |
+| POST | /api/reports | Pelapor | Create new report |
+| GET | /api/reports | All | List reports (role-scoped) |
+| GET | /api/reports/:id | All | Report detail |
+| PATCH | /api/reports/:id/triage | Admin | Approve/reject report |
+| PATCH | /api/reports/:id/priority | Admin | Set priority |
+| POST | /api/reports/:id/assign | Admin | Assign technician |
+| POST | /api/reports/:id/assignment/accept | Teknisi | Accept assignment |
+| POST | /api/reports/:id/assignment/reject | Teknisi | Reject assignment |
+| POST | /api/reports/:id/progress/start | Teknisi | Start work |
+| POST | /api/reports/:id/progress/complete | Teknisi | Complete work |
+| POST | /api/reports/:id/close | Admin/Pelapor | Close report |
+| POST | /api/reports/:id/reopen | Admin | Reopen report |
+| POST | /api/reports/:id/comments | All | Add comment |
+| GET | /api/dashboard | Admin/Manager | Dashboard statistics |
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Report Status Flow
+
+```
+baru → diperiksa → ditugaskan → diterima → sedang_dikerjakan → selesai_dikerjakan → ditutup
+  │                        │                            │
+  └──→ ditolak             └──→ (reject) → diperiksa     └──→ dibuka_kembali → ditugaskan
+```
+
+## Testing
+
+```bash
+npm test                    # Run all tests
+npx vitest run --reporter=verbose  # Verbose output
+```
+
+## Deployment
+
+```bash
+# Apply database migrations
+npx wrangler d1 migrations apply campus-maintenance-db
+
+# Deploy to Cloudflare
+npm run deploy
 ```

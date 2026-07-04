@@ -75,7 +75,8 @@ const mockR2 = {
 
 const mockEnv = {
   DB: mockDB,
-  ATTACHMENTS: mockR2
+  ATTACHMENTS: mockR2,
+  ENV: 'development'
 } as Env;
 
 const mockCtx = {} as ExecutionContext;
