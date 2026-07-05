@@ -1548,7 +1548,7 @@ describe('POST /api/reports/:reportId/close - Close report', () => {
 
     const response = await router.handle(request, env, mockCtx);
     expect(response.status).toBe(200);
-    expect((await response.json()).success).toBe(true);
+    expect((await response.json() as any).success).toBe(true);
 
     const updateQueries = queries.filter(q => q.sql.includes("status = 'ditutup'"));
     expect(updateQueries.length).toBe(1);
@@ -1608,7 +1608,7 @@ describe('POST /api/reports/:reportId/close - Close report', () => {
 
     const response = await router.handle(request, env, mockCtx);
     expect(response.status).toBe(409);
-    expect((await response.json()).error).toBe('CONFLICT');
+    expect((await response.json() as any).error).toBe('CONFLICT');
   });
 });
 
@@ -1628,7 +1628,7 @@ describe('POST /api/reports/:reportId/reopen - Reopen report', () => {
 
     const response = await router.handle(request, env, mockCtx);
     expect(response.status).toBe(200);
-    expect((await response.json()).success).toBe(true);
+    expect((await response.json() as any).success).toBe(true);
 
     const updateQueries = queries.filter(q => q.sql.includes("status = 'dibuka_kembali'"));
     expect(updateQueries.length).toBe(1);
@@ -1672,7 +1672,7 @@ describe('POST /api/reports/:reportId/reopen - Reopen report', () => {
 
     const response = await router.handle(request, env, mockCtx);
     expect(response.status).toBe(409);
-    expect((await response.json()).error).toBe('CONFLICT');
+    expect((await response.json() as any).error).toBe('CONFLICT');
   });
 });
 

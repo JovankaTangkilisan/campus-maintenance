@@ -2,8 +2,8 @@ import { useEffect, useState, useMemo } from 'react';
 import './App.css';
 import { useToast, ToastContainer } from './toast';
 import type { Report, ReportListItem, CommentEntry } from './types';
-import { CATEGORIES, TECHNICIANS, ROLE_SESSION_MAP, NAME_TO_TECHNICIAN_ID, ACTOR_ID_TO_NAME, type ActiveRole } from './constants';
-import { getSessionForRole, toStatusLabel, toPriorityLabel, normalizeApiReport, normalizeLocalReport, getCurrentTimestamp, formatTimestamp } from './utils';
+import { CATEGORIES, TECHNICIANS, NAME_TO_TECHNICIAN_ID, ACTOR_ID_TO_NAME } from './constants';
+import { getSessionForRole, normalizeApiReport, normalizeLocalReport } from './utils';
 
 const INITIAL_REPORTS: Report[] = [];
 
@@ -114,7 +114,7 @@ export default function App() {
   const [commentInput, setCommentInput] = useState('');
   
   // Toast notifications
-  const { toasts, removeToast, success: toastSuccess, error: toastError, info: toastInfo, warning: toastWarning } = useToast();
+  const { toasts, removeToast, error: toastError, warning: toastWarning } = useToast();
   
   // Admin Action Form states
   const [assignCategory, setAssignCategory] = useState('');
