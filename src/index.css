@@ -50,22 +50,41 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Dark mode via data-theme attribute (toggled by ThemeContext) */
+[data-theme="dark"] {
+  --color-bg-base: #0b1510;       /* Deep charcoal forest green */
+  --color-bg-card: #152219;       /* Dark rich forest green */
+  --color-fg-base: #f8fafc;       /* Slate 50 - Light Text */
+  --color-fg-muted: #cbd5e1;      /* Slate 300 - Muted Text */
+  --color-fg-light: #94a3b8;      /* Slate 400 - Secondary text */
+
+  --color-primary-light: #163e23; /* Darker green background */
+  --color-accent-light: #471818;  /* Darker red background */
+  --color-warning-light: #473118; /* Darker amber background */
+  --color-info-light: #182a47;    /* Darker blue background */
+
+  --color-border: #f8fafc;        /* White border in dark mode */
+  --color-border-subtle: #334155; /* Darker subtle border */
+  --color-card-shadow: #f8fafc;   /* White drop shadow in dark mode */
+}
+
+/* Fallback: respect system preference when no explicit theme chosen */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg-base: #0b1510;       /* Deep charcoal forest green */
-    --color-bg-card: #152219;       /* Dark rich forest green */
-    --color-fg-base: #f8fafc;       /* Slate 50 - Light Text */
-    --color-fg-muted: #cbd5e1;      /* Slate 300 - Muted Text */
-    --color-fg-light: #94a3b8;      /* Slate 400 - Secondary text */
-    
-    --color-primary-light: #163e23; /* Darker green background */
-    --color-accent-light: #471818;  /* Darker red background */
-    --color-warning-light: #473118; /* Darker amber background */
-    --color-info-light: #182a47;    /* Darker blue background */
-    
-    --color-border: #f8fafc;        /* White border in dark mode */
-    --color-border-subtle: #334155; /* Darker subtle border */
-    --color-card-shadow: #f8fafc;   /* White drop shadow in dark mode */
+  :root:not([data-theme="light"]) {
+    --color-bg-base: #0b1510;
+    --color-bg-card: #152219;
+    --color-fg-base: #f8fafc;
+    --color-fg-muted: #cbd5e1;
+    --color-fg-light: #94a3b8;
+
+    --color-primary-light: #163e23;
+    --color-accent-light: #471818;
+    --color-warning-light: #473118;
+    --color-info-light: #182a47;
+
+    --color-border: #f8fafc;
+    --color-border-subtle: #334155;
+    --color-card-shadow: #f8fafc;
   }
 }
 

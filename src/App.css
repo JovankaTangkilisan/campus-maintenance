@@ -350,10 +350,10 @@
   border-radius: 4px;
   text-transform: uppercase;
 }
-.priority-rendah { background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
-.priority-sedang { background-color: #fef3c7; color: #d97706; border: 1px solid #fcd34d; }
-.priority-tinggi { background-color: #ffedd5; color: #ea580c; border: 1px solid #fed7aa; }
-.priority-mendesak { background-color: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
+.priority-rendah { background-color: var(--color-bg-base); color: var(--color-fg-muted); border: 1px solid var(--color-border-subtle); }
+.priority-sedang { background-color: var(--color-warning-light); color: var(--color-warning); border: 1px solid var(--color-warning); }
+.priority-tinggi { background-color: var(--color-warning-light); color: var(--color-warning-hover); border: 1px solid var(--color-warning); }
+.priority-mendesak { background-color: var(--color-accent-light); color: var(--color-accent); border: 1px solid var(--color-accent); }
 
 /* Detail Panel */
 .detail-panel {
@@ -1124,4 +1124,180 @@
     transform: translateX(0);
     opacity: 1;
   }
+}
+
+/* Login Page */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background-color: var(--color-bg-base);
+}
+
+.login-container {
+  background-color: var(--color-bg-card);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 32px;
+  box-shadow: var(--shadow-flat);
+  max-width: 480px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.login-brand {
+  text-align: center;
+}
+
+.login-brand h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--color-border);
+  margin: 0;
+}
+
+.login-subtitle {
+  font-size: 0.85rem;
+  color: var(--color-fg-muted);
+  font-weight: 600;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.login-form h2 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--color-fg-base);
+  margin: 0;
+  text-align: center;
+}
+
+.login-error {
+  padding: 10px 14px;
+  background-color: var(--color-accent-light);
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.login-field label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-fg-base);
+}
+
+.login-field input {
+  padding: 10px 12px;
+  border: var(--border-width-sm) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg-card);
+  color: var(--color-fg-base);
+  font-weight: 500;
+  outline: none;
+}
+
+.login-field input:focus {
+  border-color: var(--color-primary);
+}
+
+.login-btn {
+  width: 100%;
+  padding: 12px;
+  font-size: 1rem;
+}
+
+.login-demo {
+  border-top: var(--border-width-sm) solid var(--color-border);
+  padding-top: 16px;
+}
+
+.login-demo h3 {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  margin: 0 0 12px 0;
+  text-align: center;
+}
+
+.demo-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.demo-btn {
+  background-color: var(--color-bg-base);
+  border: var(--border-width-sm) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  transition: all 0.15s ease-out;
+  text-align: left;
+}
+
+.demo-btn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-flat-sm);
+}
+
+.demo-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.demo-role {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  text-transform: uppercase;
+}
+
+.demo-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-fg-base);
+}
+
+/* User Info Box */
+.user-info-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.user-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-fg-base);
+}
+
+.user-role {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  text-transform: uppercase;
 }
