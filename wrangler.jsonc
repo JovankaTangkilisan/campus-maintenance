@@ -44,8 +44,8 @@
 	"d1_databases": [
 		{
 			"binding": "DB",
-			"database_name": "campus-maintenance-db",
-			"database_id": "c3fbbe87-3475-4bb6-b605-e1fb2c31e21b"
+			"database_name": "campus-maintenance",
+			"database_id": "af65dfa5-148b-433f-8a52-30bbcd21f16d"
 		}
 	],
 	"r2_buckets": [
