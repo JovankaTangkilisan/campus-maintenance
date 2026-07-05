@@ -1,9 +1,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import './App.css';
 import { useToast, ToastContainer } from './toast';
-import type { Report, ReportListItem } from './types';
+import type { Report, ReportListItem, CommentEntry } from './types';
 import { CATEGORIES, TECHNICIANS, ROLE_SESSION_MAP, NAME_TO_TECHNICIAN_ID, type ActiveRole } from './constants';
-import { getSessionForRole, toStatusLabel, toPriorityLabel, normalizeApiReport, getCurrentTimestamp, formatTimestamp } from './utils';
+import { getSessionForRole, toStatusLabel, toPriorityLabel, normalizeApiReport, normalizeLocalReport, getCurrentTimestamp, formatTimestamp } from './utils';
 
 const INITIAL_REPORTS: Report[] = [
   {
@@ -841,21 +841,17 @@ export default function App() {
         return { ...r, comments: [...r.comments, newComment] };
       }));
 
-      if (detailReport && `CM-${detailReport.report?.id}` === selectedReportId) {
+      if (detailReport && detailReport.id === selectedReportId) {
         setDetailReport(prev => {
-          if (!prev || !prev.report) return prev;
+          if (!prev) return prev;
           return {
             ...prev,
-            report: {
-              ...prev.report,
-              comments: [...(prev.report.comments || []), {
-                ...c,
-                sender_name: c.sender_name,
-                sender_role: c.sender_role,
-                comment: c.comment,
-                created_at: c.created_at
-              }]
-            }
+            comments: [...prev.comments, {
+              author: c.sender_name,
+              role: c.sender_role,
+              text: c.comment,
+              timestamp: c.created_at
+            }]
           };
         });
       }
