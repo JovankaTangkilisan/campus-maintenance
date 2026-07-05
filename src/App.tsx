@@ -979,7 +979,7 @@ export default function App() {
 
   // Helper to count status numbers for top bar
   const getStatusCount = (statusName: string) => {
-    return reports.filter(r => r.status === statusName).length;
+    return displayReports.filter(r => r.status === statusName).length;
   };
 
   return (
@@ -1573,7 +1573,7 @@ export default function App() {
                             style={{ width: '100%', maxHeight: '160px', objectFit: 'cover', borderRadius: '6px', display: 'block' }} 
                           />
                           <div style={{ fontSize: '0.75rem', color: 'var(--color-fg-muted)', marginTop: '6px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', fontWeight: 500 }} title={att.file_name}>
-                            📎 {att.file_name}
+                            {att.file_name}
                           </div>
                         </div>
                       ))}
@@ -1597,13 +1597,10 @@ export default function App() {
                       >
                         <Icons.Check /> Ya, Sesuai (Tutup Laporan)
                       </button>
-                      <button 
-                        className="btn btn-accent" 
-                        onClick={() => handleConfirmResult(false)}
-                      >
-                        Belum Sesuai (Re-Open)
-                      </button>
                     </div>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--color-fg-muted)', marginTop: '8px' }}>
+                      Jika hasil belum sesuai, hubungi Administrator untuk membuka kembali laporan.
+                    </p>
                   </div>
                 )}
 
