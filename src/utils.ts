@@ -44,10 +44,12 @@ export function normalizeLocalReport(report: Report): ReportListItem {
     status: report.status,
     createdAt: report.dateCreated,
     createdBy: report.reporterId,
-    assignedTechnicianId: null
+    assignedTechnicianId: null,
+    technician: report.technician || ''
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function normalizeApiReport(report: any): ReportListItem {
   return {
     reportCode: report.report_code || `CM-${report.id}`,
@@ -58,7 +60,8 @@ export function normalizeApiReport(report: any): ReportListItem {
     status: toStatusLabel(report.status || ''),
     createdAt: report.created_at || '',
     createdBy: report.created_by || '',
-    assignedTechnicianId: report.assigned_technician_id ?? null
+    assignedTechnicianId: report.assigned_technician_id ?? null,
+    technician: report.assigned_technician_name || ''
   };
 }
 

@@ -39,4 +39,5 @@ export interface ReportListItem {
   createdAt: string;
   createdBy?: string;
   assignedTechnicianId?: string | null;
+  technician?: string;
 }
