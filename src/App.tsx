@@ -1,9 +1,14 @@
 import { useEffect, useState, useMemo } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './AuthContext';
+import { useTheme } from './ThemeContext';
+import LoginPage from './LoginPage';
+import ProtectedRoute from './ProtectedRoute';
 import './App.css';
 import { useToast, ToastContainer } from './toast';
 import type { Report, ReportListItem, CommentEntry } from './types';
 import { CATEGORIES, TECHNICIANS, NAME_TO_TECHNICIAN_ID, ACTOR_ID_TO_NAME } from './constants';
-import { getSessionForRole, normalizeApiReport, normalizeLocalReport } from './utils';
+import { normalizeApiReport, normalizeLocalReport } from './utils';
 
 const INITIAL_REPORTS: Report[] = [];
 
@@ -58,13 +63,82 @@ const Icons = {
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="20 6 9 17 4 12"></polyline>
     </svg>
+  ),
+  Logout: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line>
+    </svg>
+  ),
+  Sun: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  ),
+  Moon: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+    </svg>
   )
 };
 
 export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
+
+function AppRoutes() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="app-container">
+        <div className="empty-state">Memuat...</div>
+      </div>
+    );
+  }
+
+  return (
+    <Routes>
+      <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
+      <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+function Dashboard() {
+  const { user, logout, getAuthHeaders } = useAuth();
+  const { theme, toggleTheme } = useTheme();
+
+  // Map user role to internal role key
+  const activeRole = useMemo(() => {
+    if (!user) return 'pelapor';
+    const roleMap: Record<string, 'pelapor' | 'admin' | 'teknisi' | 'manajer'> = {
+      'Pelapor': 'pelapor',
+      'Administrator': 'admin',
+      'Teknisi': 'teknisi',
+      'Manajer Fasilitas': 'manajer'
+    };
+    return roleMap[user.role] || 'pelapor';
+  }, [user]);
+
+  // Build session headers from user
+  const activeSession = useMemo(() => {
+    if (!user) return { actorId: '', actorName: '', actorRole: '' };
+    return {
+      actorId: user.id,
+      actorName: user.name,
+      actorRole: user.role
+    };
+  }, [user]);
+
   // --- APPLICATION STATE ---
   const [reports, setReports] = useState<Report[]>(INITIAL_REPORTS);
-  const [activeRole, setActiveRole] = useState<'pelapor' | 'admin' | 'teknisi' | 'manajer'>('pelapor');
   const [listReports, setListReports] = useState<ReportListItem[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState('');
@@ -131,8 +205,6 @@ export default function App() {
     return null;
   }, [detailReport, reports, selectedReportId]);
 
-  const activeSession = getSessionForRole(activeRole);
-
   useEffect(() => {
     const controller = new AbortController();
 
@@ -166,6 +238,7 @@ export default function App() {
           method: 'GET',
           signal: controller.signal,
           headers: {
+            ...getAuthHeaders(),
             'x-actor-id': activeSession.actorId,
             'x-actor-name': activeSession.actorName,
             'x-actor-role': activeSession.actorRole
@@ -228,6 +301,7 @@ export default function App() {
           method: 'GET',
           signal: controller.signal,
           headers: {
+            ...getAuthHeaders(),
             'x-actor-id': activeSession.actorId,
             'x-actor-name': activeSession.actorName,
             'x-actor-role': activeSession.actorRole
@@ -276,6 +350,7 @@ export default function App() {
           method: 'GET',
           signal: controller.signal,
           headers: {
+            ...getAuthHeaders(),
             'x-actor-id': activeSession.actorId,
             'x-actor-name': activeSession.actorName,
             'x-actor-role': activeSession.actorRole
@@ -390,16 +465,16 @@ export default function App() {
     setIsSubmitting(true);
     setSubmitError('');
     setSubmitSuccess(false);
-    const session = activeSession;
 
     try {
       const response = await fetch('/api/reports', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-actor-id': session.actorId,
-          'x-actor-name': session.actorName,
-          'x-actor-role': session.actorRole
+          ...getAuthHeaders(),
+          'x-actor-id': activeSession.actorId,
+          'x-actor-name': activeSession.actorName,
+          'x-actor-role': activeSession.actorRole
         },
         body: JSON.stringify({
           title: newTitle,
@@ -425,9 +500,10 @@ export default function App() {
         const attachResponse = await fetch(`/api/reports/${data.report.id}/attachments`, {
           method: 'POST',
           headers: {
-            'x-actor-id': session.actorId,
-            'x-actor-name': session.actorName,
-            'x-actor-role': session.actorRole
+            ...getAuthHeaders(),
+            'x-actor-id': activeSession.actorId,
+            'x-actor-name': activeSession.actorName,
+            'x-actor-role': activeSession.actorRole
           },
           body: formData
         });
@@ -443,7 +519,7 @@ export default function App() {
 
       setSubmitSuccess(true);
 
-      const newUiReport = mapDbReportToUi(finalReport, session.actorName);
+      const newUiReport = mapDbReportToUi(finalReport, activeSession.actorName);
       setReports(prev => [newUiReport, ...prev]);
       setSelectedReportId(newUiReport.id);
       setCurrentPage(1);
@@ -497,7 +573,6 @@ export default function App() {
   const handleVerifyReport = async (accept: boolean) => {
     if (!selectedReportId || !activeRole) return;
 
-    const session = getSessionForRole(activeRole);
     const uiToApiPriority: Record<string, string> = {
       'Rendah': 'low',
       'Sedang': 'medium',
@@ -521,10 +596,11 @@ export default function App() {
       const response = await fetch(`/api/reports/${selectedReportId.replace('CM-', '')}/triage`, {
         method: 'PATCH',
         headers: {
+          ...getAuthHeaders(),
           'Content-Type': 'application/json',
-          'x-actor-id': session.actorId,
-          'x-actor-name': session.actorName,
-          'x-actor-role': session.actorRole
+          'x-actor-id': activeSession.actorId,
+          'x-actor-name': activeSession.actorName,
+          'x-actor-role': activeSession.actorRole
         },
         body: JSON.stringify(body)
       });
@@ -549,7 +625,6 @@ export default function App() {
   const handleSetPriority = async () => {
     if (!assignPriority || !selectedReportId || !activeRole) return;
 
-    const session = getSessionForRole(activeRole);
     const uiToApiPriority: Record<string, string> = {
       'Rendah': 'low',
       'Sedang': 'medium',
@@ -562,10 +637,11 @@ export default function App() {
       const response = await fetch(`/api/reports/${selectedReportId.replace('CM-', '')}/priority`, {
         method: 'PATCH',
         headers: {
+          ...getAuthHeaders(),
           'Content-Type': 'application/json',
-          'x-actor-id': session.actorId,
-          'x-actor-name': session.actorName,
-          'x-actor-role': session.actorRole
+          'x-actor-id': activeSession.actorId,
+          'x-actor-name': activeSession.actorName,
+          'x-actor-role': activeSession.actorRole
         },
         body: JSON.stringify({ priority: apiPriority })
       });
@@ -587,7 +663,6 @@ export default function App() {
   const handleAssignTechnician = async () => {
     if (!assignTech || !selectedReportId || !activeRole) return;
 
-    const session = getSessionForRole(activeRole);
     const technicianId = NAME_TO_TECHNICIAN_ID[assignTech];
 
     if (!technicianId) {
@@ -599,10 +674,11 @@ export default function App() {
       const response = await fetch(`/api/reports/${selectedReportId.replace('CM-', '')}/assign`, {
         method: 'POST',
         headers: {
+          ...getAuthHeaders(),
           'Content-Type': 'application/json',
-          'x-actor-id': session.actorId,
-          'x-actor-name': session.actorName,
-          'x-actor-role': session.actorRole
+          'x-actor-id': activeSession.actorId,
+          'x-actor-name': activeSession.actorName,
+          'x-actor-role': activeSession.actorRole
         },
         body: JSON.stringify({ technician_id: technicianId })
       });
@@ -624,7 +700,6 @@ export default function App() {
   const handleUpdateJobStatus = async (nextStatus: 'Diterima' | 'Sedang Dikerjakan' | 'Selesai Dikerjakan' | 'Diperiksa') => {
     if (!selectedReportId || !activeRole) return;
 
-    const session = getSessionForRole(activeRole);
     const reportId = selectedReportId.replace('CM-', '');
 
     // Accept dan reject via API; status lain tetap lokal
@@ -633,9 +708,9 @@ export default function App() {
         const res = await fetch(`/api/reports/${reportId}/assignment/accept`, {
           method: 'POST',
           headers: {
-            'x-actor-id': session.actorId,
-            'x-actor-name': session.actorName,
-            'x-actor-role': session.actorRole
+            'x-actor-id': activeSession.actorId,
+            'x-actor-name': activeSession.actorName,
+            'x-actor-role': activeSession.actorRole
           }
         });
         const data = await res.json();
@@ -651,10 +726,11 @@ export default function App() {
         const res = await fetch(`/api/reports/${reportId}/assignment/reject`, {
           method: 'POST',
           headers: {
+            ...getAuthHeaders(),
             'Content-Type': 'application/json',
-            'x-actor-id': session.actorId,
-            'x-actor-name': session.actorName,
-            'x-actor-role': session.actorRole
+            'x-actor-id': activeSession.actorId,
+            'x-actor-name': activeSession.actorName,
+            'x-actor-role': activeSession.actorRole
           },
           body: JSON.stringify({ rejection_reason: reason })
         });
@@ -672,9 +748,9 @@ export default function App() {
       const res = await fetch(`/api/reports/${reportId}/progress/${endpoint}`, {
         method: 'POST',
         headers: {
-          'x-actor-id': session.actorId,
-          'x-actor-name': session.actorName,
-          'x-actor-role': session.actorRole
+          'x-actor-id': activeSession.actorId,
+          'x-actor-name': activeSession.actorName,
+          'x-actor-role': activeSession.actorRole
         }
       });
       const data = await res.json();
@@ -688,16 +764,15 @@ export default function App() {
     e.preventDefault();
     if (!commentInput.trim() || !selectedReportId || !activeRole) return;
 
-    const session = getSessionForRole(activeRole);
-
     try {
       const response = await fetch(`/api/reports/${selectedReportId.replace('CM-', '')}/comments`, {
         method: 'POST',
         headers: {
+          ...getAuthHeaders(),
           'Content-Type': 'application/json',
-          'x-actor-id': session.actorId,
-          'x-actor-name': session.actorName,
-          'x-actor-role': session.actorRole
+          'x-actor-id': activeSession.actorId,
+          'x-actor-name': activeSession.actorName,
+          'x-actor-role': activeSession.actorRole
         },
         body: JSON.stringify({ comment: commentInput.trim() })
       });
@@ -748,7 +823,6 @@ export default function App() {
   const handleConfirmResult = async (approve: boolean) => {
     if (!selectedReportId || !activeRole) return;
 
-    const session = getSessionForRole(activeRole);
     const reportId = selectedReportId.replace('CM-', '');
     const endpoint = approve ? 'close' : 'reopen';
 
@@ -756,9 +830,9 @@ export default function App() {
       const res = await fetch(`/api/reports/${reportId}/${endpoint}`, {
         method: 'POST',
         headers: {
-          'x-actor-id': session.actorId,
-          'x-actor-name': session.actorName,
-          'x-actor-role': session.actorRole
+          'x-actor-id': activeSession.actorId,
+          'x-actor-name': activeSession.actorName,
+          'x-actor-role': activeSession.actorRole
         }
       });
       const data = await res.json();
@@ -868,56 +942,24 @@ export default function App() {
     <div className="app-container">
       <ToastContainer toasts={toasts} onRemove={removeToast} />
       
-      {/* HEADER & ROLE SWITCHER */}
+      {/* HEADER */}
       <header className="header">
         <div className="header-top">
           <div className="brand">
             <h1>CampusCare</h1>
-            <span className="brand-badge">Maintenance Wireframe</span>
+            <span className="brand-badge">Maintenance System</span>
           </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-fg-light)' }}>
-              Local Time: 2026-07-02
-            </span>
-          </div>
-        </div>
-        
-        <div className="role-switcher-container">
-          <div className="role-switcher-title">Simulasi Peran Aktor (Pilih untuk Masuk Ke Dasbor Peran):</div>
-          <div className="role-grid">
-            
-            <button 
-              className={`role-btn ${activeRole === 'pelapor' ? 'active' : ''}`}
-              onClick={() => { setActiveRole('pelapor'); setStatusFilter(''); setCurrentPage(1); }}
-            >
-              <span className="role-name">Pelapor</span>
-              <span className="role-desc">Mahasiswa / Dosen. Buat laporan & konfirmasi perbaikan.</span>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <button className="btn btn-sm" onClick={toggleTheme} title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}>
+              {theme === 'light' ? <Icons.Moon /> : <Icons.Sun />}
             </button>
-            
-            <button 
-              className={`role-btn ${activeRole === 'admin' ? 'active' : ''}`}
-              onClick={() => { setActiveRole('admin'); setStatusFilter(''); setCurrentPage(1); }}
-            >
-              <span className="role-name">Administrator</span>
-              <span className="role-desc">Pusat Layanan Fasilitas. Kelola status, kategori, prioritas, & teknisi.</span>
+            <div className="user-info-box">
+              <span className="user-name">{user?.name}</span>
+              <span className="user-role">{user?.role}</span>
+            </div>
+            <button className="btn btn-sm" onClick={logout}>
+              <Icons.Logout /> Keluar
             </button>
-            
-            <button 
-              className={`role-btn ${activeRole === 'teknisi' ? 'active' : ''}`}
-              onClick={() => { setActiveRole('teknisi'); setStatusFilter(''); setCurrentPage(1); }}
-            >
-              <span className="role-name">Teknisi</span>
-              <span className="role-desc">Petugas Lapangan. Terima & kerjakan tugas perbaikan.</span>
-            </button>
-            
-            <button 
-              className={`role-btn ${activeRole === 'manajer' ? 'active' : ''}`}
-              onClick={() => { setActiveRole('manajer'); setCurrentPage(1); }}
-            >
-              <span className="role-name">Facility Manager</span>
-              <span className="role-desc">Direktur Sarana Prasarana. Tinjau dashboard & tren penyelesaian.</span>
-            </button>
-            
           </div>
         </div>
 
@@ -993,7 +1035,7 @@ export default function App() {
                   const percentage = (count / maxCount) * 100;
                   
                   let barColor = 'var(--color-bg-base)';
-                  if (status === 'Baru') barColor = '#cbd5e1';
+                  if (status === 'Baru') barColor = 'var(--color-border-subtle)';
                   else if (status === 'Diperiksa') barColor = 'var(--color-warning-light)';
                   else if (status === 'Ditugaskan') barColor = 'var(--color-info-light)';
                   else if (status === 'Sedang Dikerjakan') barColor = 'var(--color-warning)';
@@ -1028,7 +1070,7 @@ export default function App() {
                   const maxCount = Math.max(...Object.values(stats.priorityCounts), 1);
                   const percentage = (count / maxCount) * 100;
                   
-                  let barColor = '#cbd5e1';
+                  let barColor = 'var(--color-border-subtle)';
                   if (priority === 'Mendesak') barColor = 'var(--color-accent)';
                   else if (priority === 'Tinggi') barColor = 'var(--color-warning)';
                   else if (priority === 'Sedang') barColor = 'var(--color-info)';
@@ -1069,7 +1111,7 @@ export default function App() {
                           className="bar-fill-horizontal" 
                           style={{ 
                             width: `${percentage}%`,
-                            backgroundColor: count > 0 ? 'var(--color-secondary)' : '#cbd5e1'
+                            backgroundColor: count > 0 ? 'var(--color-secondary)' : 'var(--color-border-subtle)'
                           }}
                         />
                         <span className="bar-val-horizontal">{count}</span>
@@ -1102,7 +1144,7 @@ export default function App() {
                     <tr 
                       key={r.reportCode} 
                       style={{ borderBottom: '1px solid var(--color-border-subtle)', cursor: 'pointer' }}
-                      onClick={() => { setActiveRole('admin'); setSelectedReportId(r.reportCode); }}
+                      onClick={() => { setSelectedReportId(r.reportCode); }}
                     >
                       <td style={{ padding: '10px 8px', fontWeight: 700 }}>{r.reportCode}</td>
                       <td style={{ padding: '10px 8px' }}>
