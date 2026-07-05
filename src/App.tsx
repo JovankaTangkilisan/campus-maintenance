@@ -2,123 +2,10 @@ import { useEffect, useState, useMemo } from 'react';
 import './App.css';
 import { useToast, ToastContainer } from './toast';
 import type { Report, ReportListItem, CommentEntry } from './types';
-import { CATEGORIES, TECHNICIANS, ROLE_SESSION_MAP, NAME_TO_TECHNICIAN_ID, type ActiveRole } from './constants';
+import { CATEGORIES, TECHNICIANS, ROLE_SESSION_MAP, NAME_TO_TECHNICIAN_ID, ACTOR_ID_TO_NAME, type ActiveRole } from './constants';
 import { getSessionForRole, toStatusLabel, toPriorityLabel, normalizeApiReport, normalizeLocalReport, getCurrentTimestamp, formatTimestamp } from './utils';
 
-const INITIAL_REPORTS: Report[] = [
-  {
-    id: 'CM-101',
-    title: 'AC Mati di Lab Komputer 3 Gedung D',
-    description: 'Sudah 2 hari AC di sisi belakang lab mengeluarkan bunyi bising dan sekarang mati total. Suhu lab menjadi sangat panas sehingga praktikum tidak kondusif.',
-    location: 'Gedung D, Lantai 2, Ruang Lab 3',
-    category: 'AC & Pendingin Ruangan',
-    priority: 'Tinggi',
-    status: 'Selesai Dikerjakan',
-    reporter: 'Fajar Ramadhan (Asisten Lab)',
-    reporterId: 'pelapor-1',
-    technician: 'Budi Santoso',
-    dateCreated: '2026-06-29 09:15',
-    history: [
-      { status: 'Baru', actor: 'Fajar Ramadhan (Asisten Lab)', timestamp: '2026-06-29 09:15', notes: 'Laporan pertama kali dibuat.' },
-      { status: 'Diperiksa', actor: 'Administrator', timestamp: '2026-06-29 10:30', notes: 'Laporan terverifikasi. AC perlu perbaikan kompresor.' },
-      { status: 'Ditugaskan', actor: 'Administrator', timestamp: '2026-06-29 11:00', notes: 'Ditugaskan kepada Budi Santoso.' },
-      { status: 'Diterima', actor: 'Budi Santoso', timestamp: '2026-06-29 13:45', notes: 'Tugas diterima, sedang menyiapkan perkakas.' },
-      { status: 'Sedang Dikerjakan', actor: 'Budi Santoso', timestamp: '2026-06-30 08:30', notes: 'Mulai pembongkaran kompresor AC.' },
-      { status: 'Selesai Dikerjakan', actor: 'Budi Santoso', timestamp: '2026-07-01 14:00', notes: 'Freon diisi ulang, kompresor sudah diganti. AC kembali dingin.' }
-    ],
-    comments: [
-      { author: 'Fajar Ramadhan (Asisten Lab)', role: 'Pelapor', text: 'Mohon segera ditangani ya Pak, besok pagi ada jadwal praktikum basis data 3 kelas berturut-turut.', timestamp: '2026-06-29 09:20' },
-      { author: 'Administrator', role: 'Admin', text: 'Siap Mas Fajar, prioritas sudah diubah ke Tinggi dan Teknisi Budi sedang meluncur ke lokasi.', timestamp: '2026-06-29 11:02' },
-      { author: 'Budi Santoso', role: 'Teknisi', text: 'Perbaikan selesai. Sudah dites nyala selama 2 jam dan suhu stabil di 18 derajat.', timestamp: '2026-07-01 14:02' }
-    ]
-  },
-  {
-    id: 'CM-102',
-    title: 'Proyektor Buram & Kuning di R. Kelas A-201',
-    description: 'Lampu proyektor tampak redup dan warna output condong kuning/biru. Sangat sulit dibaca oleh mahasiswa di kursi belakang.',
-    location: 'Gedung A, Lantai 2, Ruang A-201',
-    category: 'Alat Presentasi/Proyektor',
-    priority: 'Sedang',
-    status: 'Ditugaskan',
-    reporter: 'Dr. Hermawan (Dosen)',
-    reporterId: 'pelapor-2',
-    technician: 'Andi Wijaya',
-    dateCreated: '2026-07-01 08:30',
-    history: [
-      { status: 'Baru', actor: 'Dr. Hermawan (Dosen)', timestamp: '2026-07-01 08:30', notes: 'Laporan dibuat dari portal dosen.' },
-      { status: 'Diperiksa', actor: 'Administrator', timestamp: '2026-07-01 09:00', notes: 'Dikonfirmasi, lensa/lampu LCD perlu dibersihkan atau diganti.' },
-      { status: 'Ditugaskan', actor: 'Administrator', timestamp: '2026-07-01 09:15', notes: 'Ditugaskan kepada Andi Wijaya karena Budi sedang penuh.' }
-    ],
-    comments: [
-      { author: 'Administrator', role: 'Admin', text: 'Mas Andi, tolong cek apakah filternya berdebu atau memang lampunya sudah habis masa pakai (life hours).', timestamp: '2026-07-01 09:16' }
-    ]
-  },
-  {
-    id: 'CM-103',
-    title: 'Lampu Koridor Gedung B Padam Total',
-    description: 'Seluruh baris lampu di koridor lantai 1 Gedung B padam sejak tadi malam. Lorong menjadi sangat gelap di sore/malam hari dan membahayakan akses jalan.',
-    location: 'Gedung B, Lantai 1, Koridor Tengah',
-    category: '',
-    priority: '',
-    status: 'Baru',
-    reporter: 'Siti Aminah (Mahasiswa)',
-    reporterId: 'pelapor-3',
-    technician: '',
-    dateCreated: '2026-07-01 20:45',
-    history: [
-      { status: 'Baru', actor: 'Siti Aminah (Mahasiswa)', timestamp: '2026-07-01 20:45', notes: 'Laporan masuk dari aplikasi mobile.' }
-    ],
-    comments: []
-  },
-  {
-    id: 'CM-104',
-    title: 'WiFi Putus-Putus di Perpustakaan Lantai Dasar',
-    description: 'Koneksi ke SSID "Kampus-Hotspot" selalu terputus setiap 5 menit. IP Address sering tidak didapatkan (DHCP Timeout). Sangat mengganggu mahasiswa yang belajar.',
-    location: 'Gedung Rektorat/Perpustakaan, Lantai 1',
-    category: 'Jaringan & Internet',
-    priority: 'Mendesak',
-    status: 'Sedang Dikerjakan',
-    reporter: 'Rian Hidayat (Mahasiswa)',
-    reporterId: 'pelapor-4',
-    technician: 'Joko Susilo',
-    dateCreated: '2026-06-30 11:10',
-    history: [
-      { status: 'Baru', actor: 'Rian Hidayat (Mahasiswa)', timestamp: '2026-06-30 11:10', notes: 'Laporan dibuat.' },
-      { status: 'Diperiksa', actor: 'Administrator', timestamp: '2026-06-30 11:30', notes: 'Diteruskan ke tim IT Infrastruktur.' },
-      { status: 'Ditugaskan', actor: 'Administrator', timestamp: '2026-06-30 11:40', notes: 'Ditugaskan ke Joko Susilo.' },
-      { status: 'Diterima', actor: 'Joko Susilo', timestamp: '2026-06-30 13:00', notes: 'Tugas diterima, mendiagnosis akses poin nomor AP-04.' },
-      { status: 'Sedang Dikerjakan', actor: 'Joko Susilo', timestamp: '2026-07-01 10:00', notes: 'Sedang mengganti kabel LAN Cat6 dan memeriksa konfigurasi switch port.' }
-    ],
-    comments: [
-      { author: 'Joko Susilo', role: 'Teknisi', text: 'Ada indikasi switch port mengalami flapping. Sedang kami alihkan ke port cadangan.', timestamp: '2026-07-01 10:15' }
-    ]
-  },
-  {
-    id: 'CM-105',
-    title: 'Kursi Kuliah Patah di R. Sidang C-102',
-    description: 'Sandaran kursi lipat berbahan besi-kayu nomor 12 patah pada bagian engsel bawah. Kursi tidak bisa diduduki dan disimpan di sudut ruangan.',
-    location: 'Gedung C, Lantai 1, Ruang Sidang Utama C-102',
-    category: 'Furnitur/Mebel',
-    priority: 'Rendah',
-    status: 'Ditutup',
-    reporter: 'Lutfi Hakim (Staf Tata Usaha)',
-    reporterId: 'pelapor-5',
-    technician: 'Andi Wijaya',
-    dateCreated: '2026-06-25 14:00',
-    history: [
-      { status: 'Baru', actor: 'Lutfi Hakim (Staf Tata Usaha)', timestamp: '2026-06-25 14:00', notes: 'Laporan dibuat.' },
-      { status: 'Diperiksa', actor: 'Administrator', timestamp: '2026-06-25 15:30', notes: 'Disetujui untuk diperbaiki oleh tukang las.' },
-      { status: 'Ditugaskan', actor: 'Administrator', timestamp: '2026-06-25 16:00', notes: 'Ditugaskan ke Andi Wijaya.' },
-      { status: 'Diterima', actor: 'Andi Wijaya', timestamp: '2026-06-26 09:00', notes: 'Tugas diterima.' },
-      { status: 'Sedang Dikerjakan', actor: 'Andi Wijaya', timestamp: '2026-06-26 10:30', notes: 'Proses pengelasan ulang engsel besi.' },
-      { status: 'Selesai Dikerjakan', actor: 'Andi Wijaya', timestamp: '2026-06-26 14:30', notes: 'Engsel diperkuat dengan plat besi baru. Kursi kokoh kembali.' },
-      { status: 'Ditutup', actor: 'Administrator', timestamp: '2026-06-27 10:00', notes: 'Pelapor mengonfirmasi kursi sudah diletakkan kembali ke barisan dan aman. Laporan ditutup.' }
-    ],
-    comments: [
-      { author: 'Lutfi Hakim (Staf Tata Usaha)', role: 'Pelapor', text: 'Terima kasih Mas Andi, las-lasannya rapi sekali dan kursi sangat stabil.', timestamp: '2026-06-27 09:40' }
-    ]
-  }
-];
+const INITIAL_REPORTS: Report[] = [];
 
 // --- CUSTOM SVG ICONS COMPONENT ---
 const Icons = {
@@ -194,7 +81,7 @@ export default function App() {
   const [dashboardError, setDashboardError] = useState('');
   
   // Selection
-  const [selectedReportId, setSelectedReportId] = useState<string>('CM-101');
+  const [selectedReportId, setSelectedReportId] = useState<string>('');
   
   // Tabs in Details panel: 'detail' or 'timeline' or 'komentar'
   const [activeDetailTab, setActiveDetailTab] = useState<'detail' | 'timeline' | 'komentar'>('detail');
@@ -238,8 +125,8 @@ export default function App() {
   // Get currently selected report (prefer API detail data, fallback to local mock)
   const selectedReport = useMemo(() => {
     if (detailReport) return detailReport;
-    if (reports.length > 0) {
-      return reports.find(r => r.id === selectedReportId) || reports[0];
+    if (reports.length > 0 && selectedReportId) {
+      return reports.find(r => r.id === selectedReportId) || null;
     }
     return null;
   }, [detailReport, reports, selectedReportId]);
@@ -354,9 +241,7 @@ export default function App() {
         }
 
         const report = data.report;
-        const authorName = report.created_by === 'pelapor-1'
-          ? 'Fajar Ramadhan (Asisten Lab)'
-          : report.created_by;
+        const authorName = resolveActorName(report.created_by);
         const uiReport = mapDbReportToUi(report, authorName);
         setDetailReport(uiReport);
         setDetailError('');
@@ -422,11 +307,8 @@ export default function App() {
   }, [activeRole, activeSession.actorId, activeSession.actorName, activeSession.actorRole]);
 
   // --- MAPPING & HELPERS ---
-  const TECHNICIAN_ID_TO_NAME: Record<string, string> = {
-    'teknisi-1': 'Budi Santoso',
-    'teknisi-2': 'Andi Wijaya',
-    'teknisi-3': 'Joko Susilo',
-    'teknisi-4': 'Slamet Riyadi'
+  const resolveActorName = (actorId: string): string => {
+    return ACTOR_ID_TO_NAME[actorId] || actorId;
   };
 
   // UC-01: Buat Laporan Baru (REST API)
@@ -461,20 +343,20 @@ export default function App() {
       reporter: authorName,
       reporterId: dbReport.created_by,
       technician: dbReport.assigned_technician_id
-        ? (TECHNICIAN_ID_TO_NAME[dbReport.assigned_technician_id] || dbReport.assigned_technician_id)
+        ? (ACTOR_ID_TO_NAME[dbReport.assigned_technician_id] || dbReport.assigned_technician_name || dbReport.assigned_technician_id)
         : '',
       dateCreated: dbReport.created_at,
       history: dbReport.status_history
         ? dbReport.status_history.map((h: any) => ({
             status: statusMap[h.new_status] || h.new_status,
-            actor: h.actor_id === 'pelapor-1' ? 'Fajar Ramadhan (Asisten Lab)' : h.actor_id,
+            actor: resolveActorName(h.actor_id),
             timestamp: h.changed_at,
             notes: h.notes || ''
           }))
         : dbReport.history
           ? dbReport.history.map((h: any) => ({
               status: statusMap[h.new_status] || h.new_status,
-              actor: h.actor_id === 'pelapor-1' ? 'Fajar Ramadhan (Asisten Lab)' : h.actor_id,
+              actor: resolveActorName(h.actor_id),
               timestamp: h.changed_at,
               notes: h.notes || ''
             }))
@@ -820,13 +702,13 @@ export default function App() {
         body: JSON.stringify({ comment: commentInput.trim() })
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const err = await response.json();
-        console.error('Gagal mengirim komentar:', err.message);
+        console.error('Gagal mengirim komentar:', data.message);
         return;
       }
 
-      const data = await response.json();
       const c = data.comment;
 
       const newComment: CommentEntry = {

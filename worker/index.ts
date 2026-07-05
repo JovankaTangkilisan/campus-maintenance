@@ -20,6 +20,29 @@ const REPORT_STATUSES = [
 const REPORT_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
 const REPORT_SORTS = ['created_at_desc', 'created_at_asc'] as const;
 
+const VALID_STATUS_TRANSITIONS: Record<string, string[]> = {
+  'baru': ['diperiksa', 'ditolak'],
+  'diperiksa': ['ditugaskan'],
+  'ditolak': [],
+  'ditugaskan': ['diterima', 'diperiksa'],
+  'diterima': ['sedang_dikerjakan'],
+  'sedang_dikerjakan': ['selesai_dikerjakan'],
+  'selesai_dikerjakan': ['ditutup', 'dibuka_kembali'],
+  'ditutup': [],
+  'dibuka_kembali': ['ditugaskan']
+};
+
+function assertValidTransition(currentStatus: string, nextStatus: string) {
+  const allowed = VALID_STATUS_TRANSITIONS[currentStatus];
+  if (!allowed || !allowed.includes(nextStatus)) {
+    throw new AppError(
+      409,
+      'CONFLICT',
+      `Invalid status transition from '${currentStatus}' to '${nextStatus}'. Allowed transitions: ${allowed?.join(', ') || 'none'}.`
+    );
+  }
+}
+
 function escapeLikeValue(value: string) {
   return value.toLowerCase().replace(/[\\%_]/g, '\\$&');
 }
@@ -34,7 +57,7 @@ function getReportRoleScope(actor: Actor) {
 
   if (actor.role === 'Teknisi') {
     return {
-      clause: "EXISTS (SELECT 1 FROM service_request_assignments a WHERE a.service_request_id = sr.id AND a.technician_id = ? AND a.status IN ('assigned', 'accepted', 'completed'))",
+      clause: "EXISTS (SELECT 1 FROM service_request_assignments a WHERE a.service_request_id = sr.id AND a.technician_id = ? AND a.status IN ('assigned', 'accepted'))",
       params: [actor.id]
     };
   }
@@ -619,6 +642,8 @@ router.post('/api/reports/:reportId/assignment/accept', mockAuth(['Teknisi']), a
     throw new AppError(409, 'CONFLICT', 'Report status must be "ditugaskan" to accept.');
   }
 
+  assertValidTransition(activeAssignment.status, 'diterima');
+
   // Update assignment: status = 'accepted', acknowledged_at = now
   await ctx.env.DB.prepare(
     `UPDATE service_request_assignments SET status = 'accepted', acknowledged_at = CURRENT_TIMESTAMP WHERE id = ? AND is_active = 1`
@@ -676,6 +701,8 @@ router.post('/api/reports/:reportId/assignment/reject', mockAuth(['Teknisi']), a
     throw new AppError(409, 'CONFLICT', 'Report status must be "ditugaskan" to reject.');
   }
 
+  assertValidTransition(activeAssignment.status, 'diperiksa');
+
   // Deaktivasi assignment, catat alasan & waktu tolak
   await ctx.env.DB.prepare(
     `UPDATE service_request_assignments SET is_active = 0, status = 'rejected', rejected_at = CURRENT_TIMESTAMP, rejection_reason = ? WHERE id = ? AND is_active = 1`
@@ -716,7 +743,7 @@ router.post('/api/reports/:reportId/progress/start', mockAuth(['Teknisi']), asyn
     throw new AppError(403, 'FORBIDDEN', 'Access denied. You are not assigned to this report or the report is not in "diterima" status.');
   }
 
-  // Update report: status = 'sedang_dikerjakan', started_at = now
+  assertValidTransition('diterima', 'sedang_dikerjakan');
   await ctx.env.DB.prepare(
     `UPDATE service_requests SET status = 'sedang_dikerjakan', started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   ).bind(reportId).run();
@@ -751,7 +778,7 @@ router.post('/api/reports/:reportId/progress/complete', mockAuth(['Teknisi']), a
     throw new AppError(403, 'FORBIDDEN', 'Access denied. You are not assigned to this report or the report is not in "sedang_dikerjakan" status.');
   }
 
-  // Update report: status = 'selesai_dikerjakan', completed_at = now
+  assertValidTransition('sedang_dikerjakan', 'selesai_dikerjakan');
   await ctx.env.DB.prepare(
     `UPDATE service_requests SET status = 'selesai_dikerjakan', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   ).bind(reportId).run();
@@ -784,6 +811,7 @@ router.post('/api/reports/:reportId/close', mockAuth(), async (_request, ctx) =>
     if (report.status !== 'selesai_dikerjakan') {
       throw new AppError(409, 'CONFLICT', 'Only reports with status "selesai_dikerjakan" can be closed.');
     }
+    assertValidTransition(report.status, 'ditutup');
   } else {
     // Admin: langsung cek status
     const report = await ctx.env.DB.prepare('SELECT status FROM service_requests WHERE id = ?')
@@ -792,6 +820,7 @@ router.post('/api/reports/:reportId/close', mockAuth(), async (_request, ctx) =>
     if (report.status !== 'selesai_dikerjakan') {
       throw new AppError(409, 'CONFLICT', 'Only reports with status "selesai_dikerjakan" can be closed.');
     }
+    assertValidTransition(report.status, 'ditutup');
   }
 
   await ctx.env.DB.prepare(
@@ -820,6 +849,8 @@ router.post('/api/reports/:reportId/reopen', mockAuth(['Administrator']), async 
   if (report.status !== 'selesai_dikerjakan') {
     throw new AppError(409, 'CONFLICT', 'Only reports with status "selesai_dikerjakan" can be reopened.');
   }
+
+  assertValidTransition(report.status, 'dibuka_kembali');
 
   // Kembalikan ke alur penugasan: status = dibuka_kembali, hapus assigned_technician_id
   await ctx.env.DB.prepare(

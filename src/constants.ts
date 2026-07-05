@@ -30,4 +30,18 @@ export const NAME_TO_TECHNICIAN_ID: Record<string, string> = {
   'Slamet Riyadi': 'teknisi-4'
 };
 
+export const ACTOR_ID_TO_NAME: Record<string, string> = {
+  'pelapor-1': 'Fajar Ramadhan (Asisten Lab)',
+  'pelapor-2': 'Dr. Hermawan (Dosen)',
+  'pelapor-3': 'Siti Aminah (Mahasiswa)',
+  'pelapor-4': 'Rian Hidayat (Mahasiswa)',
+  'pelapor-5': 'Lutfi Hakim (Staf Tata Usaha)',
+  'admin-1': 'Administrator',
+  'teknisi-1': 'Budi Santoso',
+  'teknisi-2': 'Andi Wijaya',
+  'teknisi-3': 'Joko Susilo',
+  'teknisi-4': 'Slamet Riyadi',
+  'manajer-1': 'Facility Manager'
+};
+
 export type ActiveRole = keyof typeof ROLE_SESSION_MAP;

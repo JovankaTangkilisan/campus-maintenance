@@ -37,11 +37,15 @@ export function ToastContainer({ toasts, onRemove }: ToastContainerProps) {
   useEffect(() => {
     if (toasts.length === 0) return;
 
-    const timer = setTimeout(() => {
-      onRemove(toasts[0].id);
-    }, 4000);
+    const timers = toasts.map(toast => {
+      return setTimeout(() => {
+        onRemove(toast.id);
+      }, 4000);
+    });
 
-    return () => clearTimeout(timer);
+    return () => {
+      timers.forEach(timer => clearTimeout(timer));
+    };
   }, [toasts, onRemove]);
 
   if (toasts.length === 0) return null;
