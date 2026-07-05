@@ -4,6 +4,13 @@ export interface Actor {
   role: 'Pelapor' | 'Administrator' | 'Teknisi' | 'Manajer Fasilitas';
 }
 
+export interface User {
+  id: string;
+  username: string;
+  name: string;
+  role: 'Pelapor' | 'Administrator' | 'Teknisi' | 'Manajer Fasilitas';
+}
+
 export interface RouteContext {
   env: Env;
   executionCtx: ExecutionContext;
@@ -22,6 +29,6 @@ export type Middleware = (
 
 export interface Env {
   DB: D1Database;
-  ATTACHMENTS: R2Bucket;
+  ATTACHMENTS?: R2Bucket;
   ENV?: string;
 }

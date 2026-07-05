@@ -73,6 +73,25 @@ CREATE TABLE IF NOT EXISTS service_request_attachments (
     FOREIGN KEY (service_request_id) REFERENCES service_requests(id) ON DELETE CASCADE
 );
 
+-- 6. Tabel Pengguna: users
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('Pelapor', 'Administrator', 'Teknisi', 'Manajer Fasilitas')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+-- 7. Tabel Sesi Login: sessions
+CREATE TABLE IF NOT EXISTS sessions (
+    token TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    expires_at DATETIME NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- Indeks Kinerja untuk Kueri Pencarian, Filter, dan Timeline
 CREATE INDEX IF NOT EXISTS idx_service_requests_status ON service_requests(status);
 CREATE INDEX IF NOT EXISTS idx_service_requests_priority ON service_requests(priority);
@@ -89,3 +108,19 @@ CREATE INDEX IF NOT EXISTS idx_assignments_service_request_id ON service_request
 CREATE INDEX IF NOT EXISTS idx_assignments_technician_id ON service_request_assignments(technician_id);
 
 CREATE INDEX IF NOT EXISTS idx_attachments_service_request_id ON service_request_attachments(service_request_id);
+
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+
+-- Seed data: demo users (password: password123)
+-- SHA-256 hash of "password123"
+INSERT OR IGNORE INTO users (id, username, password_hash, name, role) VALUES
+    ('pelapor-1', 'fajar', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'Fajar Ramadhan (Asisten Lab)', 'Pelapor'),
+    ('pelapor-2', 'hermawan', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'Dr. Hermawan (Dosen)', 'Pelapor'),
+    ('admin-1', 'admin', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'Administrator', 'Administrator'),
+    ('teknisi-1', 'budi', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'Budi Santoso', 'Teknisi'),
+    ('teknisi-2', 'andi', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'Andi Wijaya', 'Teknisi'),
+    ('teknisi-3', 'joko', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'Joko Susilo', 'Teknisi'),
+    ('teknisi-4', 'slamet', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'Slamet Riyadi', 'Teknisi'),
+    ('manajer-1', 'manager', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'Facility Manager', 'Manajer Fasilitas');

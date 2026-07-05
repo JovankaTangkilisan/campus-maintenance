@@ -48,10 +48,10 @@
 			"database_id": "af65dfa5-148b-433f-8a52-30bbcd21f16d"
 		}
 	],
-	"r2_buckets": [
-		{
-			"binding": "ATTACHMENTS",
-			"bucket_name": "campus-maintenance-attachments"
-		}
-	]
+	// "r2_buckets": [
+	// 	{
+	// 		"binding": "ATTACHMENTS",
+	// 		"bucket_name": "campus-maintenance-attachments"
+	// 	}
+	// ]
 }
