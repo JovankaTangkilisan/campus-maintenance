@@ -88,6 +88,84 @@ router.get('/api/ping', async () => {
   return Response.json({ message: 'pong' });
 });
 
+// 2a. Rute Login - POST /api/auth/login
+router.post('/api/auth/login', async (request, ctx) => {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    throw new AppError(400, 'BAD_REQUEST', 'Invalid JSON body.');
+  }
+
+  const { username, password } = body;
+
+  if (!username || !password) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Username and password are required.');
+  }
+
+  // Hash password dengan SHA-256
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const passwordHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+  // Cari user berdasarkan username dan password hash
+  const user = await ctx.env.DB.prepare(
+    'SELECT id, username, name, role FROM users WHERE username = ? AND password_hash = ?'
+  ).bind(username, passwordHash).first<any>();
+
+  if (!user) {
+    throw new AppError(401, 'UNAUTHORIZED', 'Invalid username or password.');
+  }
+
+  // Buat session token
+  const token = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 jam
+
+  // Hapus session lama user ini
+  await ctx.env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id).run();
+
+  // Simpan session baru
+  await ctx.env.DB.prepare(
+    'INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)'
+  ).bind(token, user.id, expiresAt).run();
+
+  return Response.json({
+    success: true,
+    token,
+    user: {
+      id: user.id,
+      username: user.username,
+      name: user.name,
+      role: user.role
+    }
+  });
+});
+
+// 2b. Rute Logout - POST /api/auth/logout
+router.post('/api/auth/logout', mockAuth(), async (request, ctx) => {
+  const authHeader = request.headers.get('Authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    await ctx.env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(token).run();
+  }
+  return Response.json({ success: true, message: 'Logged out successfully.' });
+});
+
+// 2c. Rute Get Current User - GET /api/auth/me
+router.get('/api/auth/me', mockAuth(), async (_request, ctx) => {
+  const actor = ctx.actor!;
+  return Response.json({
+    success: true,
+    user: {
+      id: actor.id,
+      name: actor.name,
+      role: actor.role
+    }
+  });
+});
+
 // 3. Rute yang membutuhkan Autentikasi Umum (semua peran)
 router.get('/api/auth-only', mockAuth(), async (_request, ctx) => {
   return Response.json({
@@ -231,6 +309,9 @@ router.post('/api/reports/:reportId/attachments', mockAuth(['Pelapor']), async (
   const fileKey = `reports/${reportId}/${timestamp}_${file.name}`;
 
   const arrayBuffer = await file.arrayBuffer();
+  if (!ctx.env.ATTACHMENTS) {
+    throw new AppError(500, 'INTERNAL_ERROR', 'R2 storage is not configured.');
+  }
   await ctx.env.ATTACHMENTS.put(fileKey, arrayBuffer, {
     httpMetadata: { contentType: file.type }
   });
